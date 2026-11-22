@@ -38,6 +38,16 @@ export function list(value: unknown, keys: string[] = []): RecordLike[] {
     return Array.isArray(found) ? found.map(record) : [];
 }
 
+/**
+ * Merge an object's own fields with the nested `metadata` object Aurral uses
+ * for library entities. Top-level fields win, because the client often adds
+ * authenticated image URLs there.
+ */
+export function withMetadata(value: unknown): RecordLike {
+    const data = record(value);
+    return { ...record(data.metadata), ...data };
+}
+
 /** A duration in milliseconds, whether the server sends ms, seconds or `mm:ss`. */
 export function durationMs(value: unknown, keys: string[]): number {
     const found = field(value, keys);
@@ -57,11 +67,19 @@ export function artUrl(client: AurralClient | null, value: unknown, keys: string
     if (typeof found !== "string" || !found) return null;
     if (/^https?:\/\//i.test(found) || found.startsWith("data:") || found.startsWith("blob:")) return found;
     if (!client || !found.startsWith("/")) return null;
-    return client.asset(found);
+    // `/api/...` artwork URLs are token-authenticated by Aurral; append the
+    // session token the same way the official client does.
+    return found.startsWith("/api/") || found.startsWith("/library/")
+        ? client.authenticatedAsset(found)
+        : client.asset(found);
 }
 
 export function normaliseTrack(client: AurralClient | null, value: unknown): AurralTrack {
-    const data = record(value);
+    const data = withMetadata(value);
+    const files = list(data, ["files"]);
+    const fileStream = files.length
+        ? text(files[0], ["streamPath", "streamUrl", "url", "path", "audioUrl"])
+        : "";
     const duration = durationMs(data, ["durationMs", "duration", "lengthMs", "length"]);
     return {
         ...data,
@@ -79,7 +97,7 @@ export function normaliseTrack(client: AurralClient | null, value: unknown): Aur
             "image",
         ]),
         durationMs: duration || null,
-        streamPath: text(data, ["streamPath", "streamUrl", "url", "path", "audioUrl"]) || null,
+        streamPath: text(data, ["streamPath", "streamUrl", "url", "path", "audioUrl"]) || fileStream || null,
         artistImageUrl: artUrl(client, data, [
             "artistImageUrl",
             "artistArtworkUrl",

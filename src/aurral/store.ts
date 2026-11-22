@@ -1,77 +1,148 @@
 /**
  * UI-facing data for the Aurral pane.
  *
- * Nothing here is authoritative: Aurral remains the source of truth. Each view
- * simply asks the server for a fresh page when opened, and playback publishes
- * its queue back through `player.ts`.
+ * The store follows the official client's page flow: Discover shelves,
+ * grouped search, paged library tabs, playlist/flow cards, detail pages, and
+ * the activity queue/history. Aurral remains the source of truth; this module
+ * only normalizes responses for the Vue components.
  */
 import { reactive } from "vue";
 
 import { currentClient, session } from "./session";
-import { errorText, list, normaliseTrack, record, text } from "./model";
+import { errorText, list, normaliseTrack, record, text, withMetadata } from "./model";
 import { next, playAt, setQueue } from "./player";
-import type { AurralTrack } from "./client";
+import type { AurralTrack, AurralClient } from "./client";
 
-export type View = "home" | "search" | "library" | "playlists" | "requests" | "people" | "shares";
+export type Item = Record<string, unknown>;
+export type View = "discover" | "search" | "library" | "playlists" | "activity" | "people" | "shares";
+
+export interface Shelf {
+    id: string;
+    title: string;
+    items: Item[];
+}
+
+export interface SearchGroup {
+    id: "top" | "artists" | "albums" | "tracks" | "playlists";
+    title: string;
+    items: Item[];
+}
+
+export interface DetailState {
+    kind: "album" | "artist" | "playlist";
+    id: string;
+    item: Item;
+    title: string;
+    subtitle: string;
+    artworkUrl: string | null;
+    tracks: Item[];
+    albums: Item[];
+    loading: boolean;
+}
+
+export interface ActivityState {
+    view: "queue" | "history";
+    page: number;
+    items: Item[];
+    total: number;
+    matching: number;
+}
 
 export interface UiState {
     view: View;
     query: string;
+    searchScope: "all" | "library";
     libraryKind: "artists" | "albums" | "tracks" | "genres";
     page: number;
+    availableOnly: boolean;
+    favoriteOnly: boolean;
+    sort: string;
+    direction: "asc" | "desc";
     loading: boolean;
     error: string | null;
-    homeSections: Array<{ title: string; items: Record<string, unknown>[] }>;
-    results: Record<string, unknown>[];
-    library: Record<string, unknown>[];
+    shelves: Shelf[];
+    searchGroups: SearchGroup[];
+    library: Item[];
+    libraryTotal: number;
     hasMore: boolean;
-    playlists: Record<string, unknown>[];
-    playlistItems: Record<string, unknown>[];
-    activePlaylist: string | null;
-    requests: Record<string, unknown>[];
-    people: Record<string, unknown>[];
-    shares: Record<string, unknown>[];
+    playlists: Item[];
+    flows: Item[];
+    activity: ActivityState;
+    people: Item[];
+    shares: Item[];
+    detail: DetailState | null;
     notice: string | null;
 }
 
 export const ui = reactive<UiState>({
-    view: "home",
+    view: "discover",
     query: "",
+    searchScope: "all",
     libraryKind: "albums",
     page: 1,
+    availableOnly: false,
+    favoriteOnly: false,
+    sort: "",
+    direction: "asc",
     loading: false,
     error: null,
-    homeSections: [],
-    results: [],
+    shelves: [],
+    searchGroups: [],
     library: [],
+    libraryTotal: 0,
     hasMore: false,
     playlists: [],
-    playlistItems: [],
-    activePlaylist: null,
-    requests: [],
+    flows: [],
+    activity: { view: "queue", page: 1, items: [], total: 0, matching: 0 },
     people: [],
     shares: [],
+    detail: null,
     notice: null,
 });
 
+const DEFAULT_KEYS = ["items", "tracks", "albums", "artists", "genres", "results", "entries", "recommendations"];
+
 /** Pull a usable array out of the several shapes Aurral uses for collections. */
-function items(value: unknown): Record<string, unknown>[] {
+function items(value: unknown, keys: string[] = DEFAULT_KEYS): Item[] {
     if (Array.isArray(value)) return value.map(record);
     const data = record(value);
-    for (const key of ["items", "tracks", "albums", "artists", "genres", "results", "entries"]) {
-        if (Array.isArray(data[key])) return (data[key] as unknown[]).map(record);
+    for (const key of keys) {
+        const found = data[key];
+        if (Array.isArray(found)) return found.map(record);
+        if (typeof found === "object" && found !== null && key !== "items") {
+            const nested = items(found, keys);
+            if (nested.length) return nested;
+        }
     }
     return [];
 }
 
-function totalPages(value: unknown): boolean {
-    const data = record(value);
-    return data.hasMore === true || data.has_next === true || (typeof data.total === "number" && typeof data.page === "number" && data.page * 50 < data.total);
+function shelf(id: string, title: string, ...payloads: unknown[]): Shelf | null {
+    const collected = payloads.flatMap((payload) => items(payload));
+    if (!collected.length) return null;
+    const seen = new Set<string>();
+    const unique = collected.filter((item) => {
+        const key = itemId(item) || `${itemTitle(item)}:${itemSubtitle(item)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+    return { id, title, items: unique.slice(0, 24) };
 }
 
-function section(title: string, ...payloads: unknown[]): { title: string; items: Record<string, unknown>[] } | null {
-    const collected = payloads.flatMap(items);
-    return collected.length ? { title, items: collected.slice(0, 24) } : null;
+function group(id: SearchGroup["id"], title: string, ...payloads: unknown[]): SearchGroup | null {
+    const collected = payloads.flatMap((payload) => items(payload));
+    return collected.length ? { id, title, items: collected.slice(0, 40) } : null;
+}
+
+function dedupe(listToDedupe: Item[]): Item[] {
+    const seen = new Set<string>();
+    return listToDedupe.filter((item) => {
+        const key = text(item, ["id", "handle", "username", "title", "name"]);
+        if (!key || seen.has(key)) return !!key;
+        seen.add(key);
+        return true;
+    });
 }
 
 /** Load whichever view is open. */
@@ -84,58 +155,31 @@ export async function refresh(): Promise<void> {
     ui.loading = true;
     ui.error = null;
     try {
-        switch (ui.view) {
-            case "home": {
-                const [discover, trending, recent, playlists] = await Promise.allSettled([
-                    client.discover(),
-                    client.trending(),
-                    client.library("albums", { pageSize: 12 }),
-                    client.playlistStatus(),
-                ]);
-                ui.homeSections = [
-                    section("Recommended", discover.status === "fulfilled" ? discover.value : null, trending.status === "fulfilled" ? trending.value : null),
-                    section("New in your library", recent.status === "fulfilled" ? recent.value : null),
-                    section("Playlists", playlists.status === "fulfilled" ? playlists.value : null),
-                ].filter((value): value is NonNullable<typeof value> => value !== null);
-                break;
-            }
-            case "search": {
-                if (!ui.query.trim()) {
-                    ui.results = [];
+        if (ui.detail) {
+            await loadDetail(client);
+        } else {
+            switch (ui.view) {
+                case "discover":
+                    await loadDiscover(client);
                     break;
-                }
-                const [artists, albums, tracks] = await Promise.all([
-                    client.search(ui.query, "artist", 20),
-                    client.search(ui.query, "album", 20),
-                    client.library("tracks", { search: ui.query, pageSize: 20 }).catch(() => ({ items: [] })),
-                ]);
-                ui.results = [...items(artists), ...items(albums), ...items(tracks)];
-                break;
-            }
-            case "library": {
-                const payload = await client.library(ui.libraryKind, { page: ui.page, pageSize: 50 });
-                ui.library = items(payload);
-                ui.hasMore = totalPages(payload);
-                break;
-            }
-            case "playlists": {
-                const payload = await client.playlistStatus();
-                ui.playlists = items(payload);
-                break;
-            }
-            case "requests": {
-                ui.requests = items(await client.requests());
-                break;
-            }
-            case "people": {
-                const payload = await client.people();
-                const friends = await client.friends().catch(() => ({}));
-                ui.people = [...items(payload), ...items(friends)];
-                break;
-            }
-            case "shares": {
-                ui.shares = items(await client.shareLinks());
-                break;
+                case "search":
+                    await loadSearch(client);
+                    break;
+                case "library":
+                    await loadLibrary(client);
+                    break;
+                case "playlists":
+                    await loadPlaylists(client);
+                    break;
+                case "activity":
+                    await loadActivity(client);
+                    break;
+                case "people":
+                    await loadPeople(client);
+                    break;
+                case "shares":
+                    await loadShares(client);
+                    break;
             }
         }
     } catch (cause) {
@@ -145,15 +189,173 @@ export async function refresh(): Promise<void> {
     }
 }
 
+async function loadDiscover(client: AurralClient): Promise<void> {
+    const [discover, trending, playlists, recent, releases] = await Promise.allSettled([
+        client.discover(),
+        client.trending(),
+        client.discoverPlaylists(),
+        client.library("artists", { pageSize: 24, sort: "recentlyAdded", direction: "desc" }),
+        client.recentReleases(),
+    ]);
+    const discoverData = record(discover.status === "fulfilled" ? discover.value : null);
+    const trendingData = record(trending.status === "fulfilled" ? trending.value : null);
+    const playlistData = record(playlists.status === "fulfilled" ? playlists.value : null);
+
+    ui.shelves = [
+        shelf("made-for-you", "Made for you", discoverData.recommendations, discoverData.basedOn, discoverData.globalTop, discoverData.top),
+        shelf("recently-added", "Recently added", recent.status === "fulfilled" ? recent.value : null),
+        shelf("trending", "Trending now", trendingData.albums, trendingData.tracks, trendingData.artists, trendingData),
+        shelf("playlists", "Playlists", playlistData.playlists, playlistData.forYou, playlistData.categories, playlistData),
+        shelf("new-releases", "Recent & upcoming releases", releases.status === "fulfilled" ? releases.value : null),
+    ].filter((value): value is Shelf => value !== null);
+}
+
+async function loadSearch(client: AurralClient): Promise<void> {
+    const query = ui.query.trim();
+    if (!query) {
+        ui.searchGroups = [];
+        return;
+    }
+    const [unified, library] = await Promise.allSettled([
+        ui.searchScope === "all" ? client.searchUnified(query, 30) : Promise.resolve(null),
+        client.searchLibrary(query, 30),
+    ]);
+    const unifiedData = record(unified.status === "fulfilled" ? unified.value : null);
+    const libraryData = record(library.status === "fulfilled" ? library.value : null);
+
+    ui.searchGroups = [
+        group("top", "Top result", unifiedData.top),
+        group("artists", "Artists", unifiedData.artists, libraryData.artists),
+        group("albums", "Albums", unifiedData.albums, libraryData.albums),
+        group("tracks", "Tracks", unifiedData.tracks, libraryData.tracks),
+        group("playlists", "Playlists", libraryData.playlists),
+    ].filter((value): value is SearchGroup => value !== null);
+}
+
+async function loadLibrary(client: AurralClient): Promise<void> {
+    const params: Record<string, string | number | boolean> = { page: ui.page, pageSize: 50 };
+    if (ui.availableOnly) params.availableOnly = true;
+    if (ui.favoriteOnly) params.favorite = true;
+    if (ui.sort) {
+        params.sort = ui.sort;
+        params.direction = ui.direction;
+    }
+    const payload = await client.library(ui.libraryKind, params);
+    const key = ui.libraryKind === "artists"
+        ? "artists"
+        : ui.libraryKind === "albums"
+            ? "albums"
+            : ui.libraryKind === "tracks"
+                ? "tracks"
+                : "genres";
+    ui.library = items(payload, [key, "items", "genres"]);
+    ui.libraryTotal = typeof payload.total === "number" ? payload.total : ui.library.length;
+    ui.hasMore = payload.hasMore === true || ui.page * 50 < ui.libraryTotal;
+}
+
+async function loadPlaylists(client: AurralClient): Promise<void> {
+    const payload = record(await client.playlistStatus());
+    ui.playlists = items(payload, ["staticPlaylists", "playlists", "items"]);
+    ui.flows = items(payload, ["flows"]);
+}
+
+async function loadActivity(client: AurralClient): Promise<void> {
+    const payload = await client.requestPage(ui.activity.view, ui.activity.page);
+    ui.activity.items = items(payload, ["items", "requests"]);
+    ui.activity.total = typeof payload.total === "number" ? payload.total : ui.activity.items.length;
+    ui.activity.matching = typeof payload.matching === "number" ? payload.matching : ui.activity.total;
+}
+
+async function loadPeople(client: AurralClient): Promise<void> {
+    const [people, friends] = await Promise.allSettled([client.people(), client.friends()]);
+    const peopleData = record(people.status === "fulfilled" ? people.value : null);
+    const friendData = record(friends.status === "fulfilled" ? friends.value : null);
+    ui.people = dedupe([
+        ...items(peopleData, ["people", "items"]),
+        ...items(friendData, ["friends", "incoming", "outgoing"]),
+    ]);
+}
+
+async function loadShares(client: AurralClient): Promise<void> {
+    const payload = record(await client.shareLinks());
+    ui.shares = items(payload, ["links", "items"]);
+}
+
+async function loadDetail(client: AurralClient): Promise<void> {
+    const detail = ui.detail;
+    if (!detail) return;
+    detail.loading = true;
+    try {
+        if (detail.kind === "playlist") {
+            const payload = await client.playlistJobs(detail.id);
+            detail.tracks = items(payload, ["tracks", "items"]);
+        } else if (detail.kind === "album") {
+            const payload = await client.library("tracks", {
+                albumId: detail.id,
+                pageSize: 100,
+                compact: false,
+                page: 1,
+            });
+            detail.tracks = items(payload, ["tracks", "items"]);
+        } else {
+            const [albums, tracks] = await Promise.all([
+                client.library("albums", { artistId: detail.id, pageSize: 50 }),
+                client.library("tracks", { artistId: detail.id, pageSize: 100, compact: false }),
+            ]);
+            detail.albums = items(albums, ["albums", "items"]);
+            detail.tracks = items(tracks, ["tracks", "items"]);
+        }
+    } catch (cause) {
+        ui.error = errorText(cause);
+    } finally {
+        detail.loading = false;
+    }
+}
+
 export function setView(view: View): void {
-    if (ui.view === view) return;
+    if (ui.view === view && !ui.detail) return;
     ui.view = view;
+    ui.detail = null;
     ui.error = null;
     void refresh();
 }
 
+export function setActivityView(view: "queue" | "history"): void {
+    if (ui.activity.view === view) return;
+    ui.activity.view = view;
+    ui.activity.page = 1;
+    void refresh();
+}
+
+/** Open a library/search item's detail page. */
+export function openDetail(item: Item, kind: DetailState["kind"]): void {
+    const id = itemId(item);
+    if (!id) {
+        ui.notice = "That item does not expose an id.";
+        return;
+    }
+    ui.view = kind === "playlist" ? "playlists" : "library";
+    ui.detail = {
+        kind,
+        id,
+        item,
+        title: itemTitle(item),
+        subtitle: itemSubtitle(item),
+        artworkUrl: itemArtwork(item),
+        tracks: [],
+        albums: [],
+        loading: true,
+    };
+    void refresh();
+}
+
+export function closeDetail(): void {
+    ui.detail = null;
+    void refresh();
+}
+
 /** Play a collection, expanding albums/playlists that carry their own tracks. */
-export function playCollection(collection: Record<string, unknown>[], index: number): void {
+export function playCollection(collection: Item[], index = 0): void {
     const client = currentClient();
     if (!client) return;
     const playable: AurralTrack[] = [];
@@ -165,7 +367,7 @@ export function playCollection(collection: Record<string, unknown>[], index: num
             playable.push(direct);
             return;
         }
-        const embedded = list(item, ["tracks", "songs", "items"]);
+        const embedded = items(item, ["tracks", "songs", "items"]);
         const tracks = embedded.map((entry) => normaliseTrack(client, entry)).filter((track) => track.streamPath);
         if (position < index) start = playable.length;
         playable.push(...tracks);
@@ -179,36 +381,103 @@ export function playCollection(collection: Record<string, unknown>[], index: num
     void playAt(position);
 }
 
-/** Open a playlist's jobs/tracks. */
-export async function openPlaylist(item: Record<string, unknown>): Promise<void> {
+/** Play one card: direct tracks, embedded tracks, or album/artist radio. */
+export async function playItem(item: Item): Promise<void> {
     const client = currentClient();
     if (!client) return;
-    const id = text(item, ["id", "playlistId", "jobId", "staticPlaylistId"]);
-    ui.activePlaylist = id || null;
-    ui.playlistItems = items(item);
-    if (!id) return;
-    ui.loading = true;
-    ui.error = null;
+    const direct = normaliseTrack(client, item);
+    if (direct.streamPath) {
+        playCollection([item], 0);
+        return;
+    }
+    const embedded = items(item, ["tracks", "songs", "items"]);
+    if (embedded.length) {
+        playCollection(embedded, 0);
+        return;
+    }
+    const kind = itemKind(item);
+    const id = itemId(item);
+    if (!id || (kind !== "album" && kind !== "artist")) {
+        ui.notice = "That item does not include playable tracks.";
+        return;
+    }
+    ui.notice = null;
     try {
-        const payload = await client.playlistJobs(id);
-        ui.playlistItems = items(payload);
+        const payload = await client.radio(kind === "album" ? { albumIds: [id], limit: 500 } : { artists: [id], limit: 500 });
+        const tracks = items(payload, ["tracks", "items"]).map((track) => normaliseTrack(client, track)).filter((track) => track.streamPath);
+        if (!tracks.length) throw new Error("No playable tracks were returned.");
+        setQueue(tracks, 0);
+        void playAt(0);
     } catch (cause) {
         ui.error = errorText(cause);
-    } finally {
-        ui.loading = false;
     }
 }
 
-export function itemId(item: Record<string, unknown>): string {
-    return text(item, ["id", "trackId", "albumId", "artistId", "playlistId", "jobId"]);
+/** Play the tracks currently shown in an open detail page. */
+export async function playDetail(): Promise<void> {
+    const detail = ui.detail;
+    if (!detail) return;
+    if (detail.tracks.length) {
+        playCollection(detail.tracks, 0);
+        return;
+    }
+    await playItem(detail.item);
 }
 
-export function itemTitle(item: Record<string, unknown>): string {
-    return text(item, ["title", "name", "artist", "album"], "Untitled");
+export function itemId(item: Item): string {
+    return text(item, ["id", "trackId", "albumId", "artistId", "playlistId", "jobId", "externalId"]);
 }
 
-export function itemSubtitle(item: Record<string, unknown>): string {
-    return text(item, ["artistName", "albumName", "year", "type", "owner", "username", "status"]);
+export function itemKind(item: Item): string {
+    const explicit = text(item, ["type", "kind"]).toLowerCase();
+    if (explicit.includes("album") || explicit.includes("release")) return "album";
+    if (explicit.includes("artist")) return "artist";
+    if (explicit.includes("playlist") || explicit.includes("flow")) return "playlist";
+    if (item["tracks"] || item["trackIds"]) return "album";
+    return "item";
+}
+
+export function itemTitle(item: Item): string {
+    const data = withMetadata(item);
+    return text(data, ["title", "name", "trackName", "album", "artist"], "Untitled");
+}
+
+export function itemSubtitle(item: Item): string {
+    const data = withMetadata(item);
+    return text(data, ["artistName", "albumName", "albumArtist", "ownerUsername", "username", "year", "releaseDate", "type", "status"]);
+}
+
+export function itemArtwork(item: Item): string | null {
+    const data = withMetadata(item);
+    const value = text(data, [
+        "artworkUrl",
+        "coverArtUrl",
+        "coverUrl",
+        "albumArtUrl",
+        "defaultCoverUrl",
+        "imageUrl",
+        "image",
+        "artwork",
+        "coverArt",
+        "avatarUrl",
+        "artistImageUrl",
+    ]);
+    return value || null;
+}
+
+export function itemDuration(item: Item): string {
+    const data = withMetadata(item);
+    const value = text(data, ["durationMs", "duration", "lengthMs", "length"]);
+    if (!value) return "";
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return value;
+    const ms = parsed < 1000 ? parsed * 1000 : parsed;
+    const seconds = Math.floor(ms / 1000);
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+export function itemStatus(item: Item): string {
+    return text(item, ["status", "state", "phase"], "");
 }
 
 export { next, playAt };

@@ -25,25 +25,55 @@ playback, and therefore always knows the current song.
 - **Squigly link** — built from track metadata as
   `https://squigly.link/song/<artist-slug>/<title-slug>`.
 
-## Server requirements
+## Required settings on your Aurral server
 
-The plugin runs in Tumult's origin, so your Aurral server must allow it:
+The plugin talks to Aurral from Tumult's origin, so Aurral must allow that
+origin in CORS. Set `CORS_ORIGIN` to a comma-separated list of **full origins**,
+including the scheme:
 
 ```sh
-CORS_ORIGIN=https://tumult.example
+CORS_ORIGIN=https://tumult.example,https://music.example,app://tumult
 ```
 
-Set it to the exact origin of the Tumult web/desktop app (no trailing slash,
-no path). Without it, browsers block the API and audio calls.
+For the hosted Aurral client and Tumult desktop app, include:
+
+```text
+https://tumult.jackg.cc,https://music.aurral.org,https://music.jackg.cc,app://tumult
+```
+
+Important details:
+
+- Use exact origins: `https://host`, never a bare hostname such as `host`.
+- Include the port if Tumult is served from one, e.g. `http://localhost:5173`.
+- Include `app://tumult` for the Tumult desktop app; the browser sends that as
+  its origin.
+- No paths and no trailing slashes.
+- Restart Aurral after changing the environment variable.
+
+Aurral compares this value literally with the browser's `Origin` header, so
+bare hostnames will not match. You can verify a value with:
+
+```sh
+curl -sS -D - -o /dev/null \
+  -H 'Origin: https://tumult.example' \
+  https://music.example/api/health/bootstrap \
+  | grep -i access-control-allow-origin
+```
+
+Expected:
+
+```text
+access-control-allow-origin: https://tumult.example
+```
 
 Aurral's stream routes are not CORS-public and send
 `Cross-Origin-Resource-Policy: same-origin`. The plugin fetches audio with the
-session token and plays it from a blob URL, which works with CORS alone. If you
-prefer direct stream URLs, your proxy must emit `Cross-Origin-Resource-Policy:
-cross-origin` for those routes.
+session token and plays it from a blob URL, which works once CORS is configured
+as above.
 
 Do **not** put an Aurral API key in plugin settings: it is an administrator
-credential. This plugin signs in as the user and uses only a user session token.
+credential. This plugin signs in as the user and uses only a user session token,
+which is kept across Tumult restarts.
 
 ## Install and build
 
@@ -56,7 +86,7 @@ pnpm typecheck      # checks against the vendored plugin types
 Tag a release matching the manifest version to publish it:
 
 ```sh
-git tag v0.0.1 && git push origin v0.0.1
+git tag v0.0.2 && git push origin v0.0.2
 ```
 
 The workflow builds, hashes and attaches `plugin.js` and `tumult.plugin.json`.

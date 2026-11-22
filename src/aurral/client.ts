@@ -68,10 +68,10 @@ export interface LibraryPage<T = Record<string, unknown>> {
     pageSize: number;
     total: number;
     hasMore: boolean;
-    items: T[];
+    items?: T[];
     artists?: unknown[];
     albums?: unknown[];
-    tracks?: AurralTrack[];
+    tracks?: unknown[];
     genres?: unknown[];
 }
 
@@ -81,6 +81,36 @@ export interface SearchResults {
     count: number;
     offset: number;
     items: Array<Record<string, unknown>>;
+}
+
+export interface UnifiedSearchResults {
+    query: string;
+    top: Array<Record<string, unknown>>;
+    artists: Array<Record<string, unknown>>;
+    albums: Array<Record<string, unknown>>;
+    tracks: Array<Record<string, unknown>>;
+}
+
+export interface LibrarySearchResults {
+    query: string;
+    artists: Array<Record<string, unknown>>;
+    albums: Array<Record<string, unknown>>;
+    tracks: Array<Record<string, unknown>>;
+    playlists: Array<Record<string, unknown>>;
+}
+
+export interface RequestPage {
+    view: string;
+    items: Array<Record<string, unknown>>;
+    total: number;
+    matching: number;
+    filters: Array<Record<string, unknown>>;
+    [key: string]: unknown;
+}
+
+export interface ShareLinks {
+    links: Array<Record<string, unknown>>;
+    tunnel?: Record<string, unknown>;
 }
 
 /**
@@ -103,6 +133,17 @@ export class AurralClient {
     /** Build a URL for a server asset (artwork, previews). */
     asset(path: string): string {
         return this.serverUrl + path;
+    }
+
+    /**
+     * Build a token-authenticated URL for an `/api/...` asset. Aurral accepts
+     * the session token in the query string for media URLs, which is how the
+     * official client loads artwork and streams.
+     */
+    authenticatedAsset(path: string): string {
+        const url = new URL(this.serverUrl + path);
+        if (this.token) url.searchParams.set("token", this.token);
+        return url.toString();
     }
 
     private async request<T>(
@@ -210,26 +251,63 @@ export class AurralClient {
         });
     }
 
-    publishNowPlaying(streamPath: string): Promise<void> {
-        return this.request("/api/play-events/now-playing", {
-            method: "POST",
-            body: JSON.stringify({ streamPath }),
-        });
-    }
-
-    library<T>(kind: "artists" | "albums" | "tracks" | "genres", params: Record<string, string | number | boolean> = {}): Promise<LibraryPage<T>> {
-        const query = new URLSearchParams({ kind, pageSize: "50" });
+    /**
+     * Fetch one library page. The client always asks for `compact=true`, so
+     * responses carry the matching `artists`/`albums`/`tracks` array rather
+     * than a generic `items` array.
+     */
+    library<T = Record<string, unknown>>(
+        kind: "artists" | "albums" | "tracks" | "genres",
+        params: Record<string, string | number | boolean> = {},
+    ): Promise<LibraryPage<T>> {
+        const query = new URLSearchParams({ kind, pageSize: "50", compact: "true" });
         for (const [key, value] of Object.entries(params)) query.set(key, String(value));
         return this.request(`/api/library?${query}`);
     }
 
-    search(q: string, scope: "artist" | "album" = "artist", limit = 30): Promise<SearchResults> {
+    /**
+     * Turn a set of library ids into playable radio-shaped tracks with
+     * `streamPath`. The official player uses this for album/artist playback.
+     */
+    radio(params: {
+        trackIds?: Array<string | number>;
+        albumIds?: Array<string | number>;
+        artists?: Array<string | number>;
+        exclude?: Array<string | number>;
+        limit?: number;
+    }): Promise<{ tracks: unknown[] }> {
+        return this.request("/api/library/radio", {
+            method: "POST",
+            body: JSON.stringify(params),
+        });
+    }
+
+    search(q: string, scope: "artist" | "album" | "tag" = "artist", limit = 30): Promise<SearchResults> {
         const query = new URLSearchParams({ q, scope, limit: String(limit) });
         return this.request(`/api/search?${query}`);
     }
 
+    searchUnified(q: string, limit = 30): Promise<UnifiedSearchResults> {
+        const query = new URLSearchParams({ q, limit: String(limit) });
+        return this.request(`/api/search/unified?${query}`);
+    }
+
+    searchLibrary(q: string, limit = 30): Promise<LibrarySearchResults> {
+        const query = new URLSearchParams({ q, limit: String(limit) });
+        return this.request(`/api/search/library?${query}`);
+    }
+
     discover(): Promise<Record<string, unknown>> {
         return this.request("/api/discover");
+    }
+
+    discoverPlaylists(scope: "featured" | "all" = "featured"): Promise<Record<string, unknown>> {
+        const query = new URLSearchParams({ scope });
+        return this.request(`/api/discover/playlists?${query}`);
+    }
+
+    recentReleases(): Promise<Array<Record<string, unknown>>> {
+        return this.request("/api/library/recent-releases");
     }
 
     trending(): Promise<Record<string, unknown>> {
@@ -240,16 +318,27 @@ export class AurralClient {
         return this.request("/api/playlists/status");
     }
 
-    playlistJobs(playlistId: string): Promise<{ tracks?: AurralTrack[] } & Record<string, unknown>> {
-        return this.request(`/api/playlists/jobs/${encodeURIComponent(playlistId)}`);
+    playlistJobs(playlistId: string, limit = 200): Promise<Array<Record<string, unknown>>> {
+        const query = new URLSearchParams({ limit: String(limit) });
+        return this.request(`/api/playlists/jobs/${encodeURIComponent(playlistId)}?${query}`);
     }
 
-    requests(): Promise<Array<Record<string, unknown>>> {
-        return this.request("/api/requests");
+    requestPage(
+        view: "queue" | "history" = "queue",
+        page = 1,
+        status?: string,
+    ): Promise<RequestPage> {
+        const query = new URLSearchParams({ view, page: String(page) });
+        if (status) query.set("status", status);
+        return this.request(`/api/requests/page?${query}`);
     }
 
-    shareLinks(): Promise<Array<Record<string, unknown>>> {
-        return this.request("/api/share-links");
+    shareLinks(): Promise<ShareLinks> {
+        return this.request("/api/share-links/");
+    }
+
+    createPlainShareLink(): Promise<{ link: string }> {
+        return this.request("/api/share-links/plain", { method: "POST" });
     }
 
     people(): Promise<{ sharing: boolean; people: Array<Record<string, unknown>> }> {
@@ -258,5 +347,32 @@ export class AurralClient {
 
     friends(): Promise<Record<string, unknown>> {
         return this.request("/api/hub-link/friends");
+    }
+
+    /** Subscribe to one track without counting it as a completed play. */
+    publishNowPlaying(track: {
+        trackId?: string | number;
+        title: string;
+        artist: string;
+        album?: string | null;
+        albumId?: string | number | null;
+        artistMbid?: string | null;
+        albumMbid?: string | null;
+        trackMbid?: string | null;
+        durationMs?: number | null;
+        streamPath: string;
+    }): Promise<void> {
+        return this.request("/api/play-events/now-playing", {
+            method: "POST",
+            body: JSON.stringify(track),
+        });
+    }
+
+    /** Record a completed play after the halfway/30s threshold. */
+    publishPlayEvent(track: Record<string, unknown>): Promise<void> {
+        return this.request("/api/play-events", {
+            method: "POST",
+            body: JSON.stringify({ ...track, playedAt: Date.now(), source: "native-player" }),
+        });
     }
 }

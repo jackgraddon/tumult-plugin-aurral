@@ -19,9 +19,12 @@ function signOut(): void {
     disposePlayer();
     void clearListening();
     clearSession();
-    ui.homeSections = [];
-    ui.results = [];
+    ui.shelves = [];
+    ui.searchGroups = [];
     ui.library = [];
+    ui.playlists = [];
+    ui.flows = [];
+    ui.detail = null;
     notice.value = "Signed out of Aurral.";
 }
 </script>

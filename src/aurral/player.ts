@@ -12,7 +12,7 @@ import { computed, reactive, type ComputedRef } from "vue";
 
 import { AurralClient, type AurralTrack, type PlayQueue } from "./client";
 import { currentClient } from "./session";
-import { normaliseTrack } from "./model";
+import { normaliseTrack, record, text } from "./model";
 import { publishListening, clearListening } from "./status";
 
 const SAVE_THROTTLE_MS = 5000;
@@ -49,6 +49,49 @@ let objectUrl: string | null = null;
 let loadToken = 0;
 let pendingSeekMs = 0;
 let lastSave = 0;
+let playEventSent = false;
+
+function publishServerNowPlaying(track: AurralTrack | null): void {
+    const client = currentClient();
+    if (!client || !track?.streamPath) return;
+    const album = record(track.album);
+    const artist = record(track.artist);
+    const id = track.id ?? track.trackId;
+    void client.publishNowPlaying({
+        ...(id !== undefined ? { trackId: id as string | number } : {}),
+        title: track.title,
+        artist: track.artistName,
+        album: track.albumName ?? (text(album, ["title", "name"]) || null),
+        albumId: (track.albumId ?? album.id) as string | number | null,
+        artistMbid: text(artist, ["mbid"]) || text(track, ["artistMbid"]) || null,
+        albumMbid: text(track, ["albumMbid"]) || null,
+        trackMbid: track.mbid ?? null,
+        durationMs: track.durationMs ?? null,
+        streamPath: track.streamPath,
+    }).catch(() => {
+        // Now-playing is best effort; playback must continue.
+    });
+}
+
+function publishCompletedPlay(track: AurralTrack | null): void {
+    const client = currentClient();
+    if (!client || !track?.streamPath || playEventSent) return;
+    const duration = track.durationMs ?? 0;
+    if (duration <= 30_000 || state.positionMs < Math.min(duration / 2, 240_000)) return;
+    playEventSent = true;
+    const album = record(track.album);
+    void client.publishPlayEvent({
+        trackId: (track.id ?? track.trackId) as string | number | undefined,
+        title: track.title,
+        artist: track.artistName,
+        album: track.albumName ?? (text(album, ["title", "name"]) || null),
+        albumId: (track.albumId ?? album.id) as string | number | null,
+        durationMs: duration,
+        streamPath: track.streamPath,
+    }).catch(() => {
+        // Play history is best effort.
+    });
+}
 
 function element(): HTMLAudioElement {
     if (audio) return audio;
@@ -57,6 +100,7 @@ function element(): HTMLAudioElement {
     audio.volume = state.volume;
     audio.addEventListener("timeupdate", () => {
         state.positionMs = Math.floor((audio?.currentTime ?? 0) * 1000);
+        publishCompletedPlay(currentTrack.value);
     });
     audio.addEventListener("loadedmetadata", () => {
         const el = audio;
@@ -111,6 +155,7 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
     const token = ++loadToken;
     state.loading = true;
     state.error = null;
+    playEventSent = false;
     stopAudio();
     try {
         const blob = await client.fetchAudio(path);
@@ -124,6 +169,7 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
         if (autoplay) await el.play();
         state.playing = autoplay;
         void saveQueue();
+        publishServerNowPlaying(currentTrack.value);
         void publishListening(currentTrack.value, state.positionMs, state.playing);
     } catch (cause) {
         if (token !== loadToken) return;
@@ -138,6 +184,7 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
 export function loadQueue(queue: PlayQueue | null): void {
     ++loadToken;
     stopAudio();
+    playEventSent = false;
     const client = currentClient();
     state.tracks = (queue?.tracks ?? []).map((track) => normaliseTrack(client, track));
     state.index = Math.min(Math.max(0, queue?.currentIndex ?? 0), Math.max(0, state.tracks.length - 1));
@@ -151,6 +198,7 @@ export async function playAt(index: number): Promise<void> {
     if (index === state.index && objectUrl) {
         await element().play();
         state.playing = true;
+        publishServerNowPlaying(currentTrack.value);
         void publishListening(currentTrack.value, state.positionMs, true);
         return;
     }
@@ -172,6 +220,7 @@ export async function toggle(): Promise<void> {
     } else if (objectUrl) {
         await element().play();
         state.playing = true;
+        publishServerNowPlaying(currentTrack.value);
         void publishListening(currentTrack.value, state.positionMs, true);
     } else {
         await loadCurrent(true);
@@ -211,6 +260,7 @@ export function setVolume(value: number): void {
 export function setQueue(tracks: AurralTrack[], startIndex = 0): void {
     ++loadToken;
     stopAudio();
+    playEventSent = false;
     state.tracks = tracks.filter((track) => typeof track.streamPath === "string");
     state.index = Math.min(Math.max(0, startIndex), Math.max(0, state.tracks.length - 1));
     state.positionMs = 0;

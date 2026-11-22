@@ -193,7 +193,7 @@ export async function clearListening(): Promise<void> {
 }
 
 function pickArtistImage(track: AurralTrack): string | null {
-    for (const key of ["artistImageUrl", "artistArtworkUrl", "artistAvatarUrl", "artistImage", "artistPictureUrl"]) {
+    for (const key of ["artistImageUrl", "artistArtworkUrl", "artistAvatarUrl", "artistImage", "artistPictureUrl", "previewUrl"]) {
         const value = track[key];
         if (typeof value === "string" && value) return value;
     }
