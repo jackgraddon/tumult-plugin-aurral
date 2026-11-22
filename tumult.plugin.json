@@ -1,10 +1,12 @@
 {
     "$schema": "./tumult.plugin.schema.json",
-    "id": "cc.example.shrug",
-    "name": "Shrug",
-    "version": "1.0.0",
-    "author": "You",
-    "description": "Append ¯\\_(ツ)_/¯ to a message with /shrug.",
-    "permissions": ["commands", "styles"],
+    "id": "com.jackgraddon.tumult.aurral",
+    "name": "Aurral",
+    "version": "0.0.1",
+    "author": "Jack Graddon",
+    "description": "Your Aurral music library in Tumult, with a rich now-playing status.",
+    "minUI": "1.4.1",
+    "minCore": "1.7.0",
+    "permissions": ["activity-renderers", "settings-tabs", "workspace-panes", "styles"],
     "entry": "plugin.js"
 }

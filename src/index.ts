@@ -1,46 +1,77 @@
 /**
- * Shrug — the template plugin.
+ * Aurral, inside Tumult.
  *
- * Replace this file with your own. It stays small on purpose: one command, one
- * stylesheet, no Vue import. A logic-only plugin like this one runs in the
- * **sandbox lane** (Tumult derives that from the permissions below — you never
- * declare it), which means it cannot touch the DOM even if it wanted to.
+ * This is a real client for Aurral's version-2 app API, not an iframe: the
+ * hosted web client refuses framing, and a cross-origin frame could not tell
+ * the plugin what is playing. Owning playback means the plugin always knows
+ * the current track and can publish a rich now-playing status for it.
  *
- * The manifest in `tumult.plugin.json` at the repository root is the same
- * manifest declared here; keep the two in step (the release workflow copies
- * this one into the release asset).
+ * The bundle contributes live Vue components, so it runs in the trusted lane
+ * (Tumult derives that from `workspace-panes` and friends — plugins never
+ * declare the lane). It shares the host's Vue instance; the build aliases
+ * `vue` to the generated shim in `src/shims/vue.ts`.
  */
 import type { Plugin, PluginManifest } from "@tumult/ui";
 
-const manifest: PluginManifest = {
-    id: "cc.example.shrug",
-    name: "Shrug",
-    version: "1.0.0",
-    author: "You",
-    description: "Append ¯\\_(ツ)_/¯ to a message with /shrug.",
-    permissions: ["commands", "styles"],
-    // Leave this out until you have published a release with it: Tumult
-    // refuses to install a plugin that asks for a newer API than it provides.
-    // minUI: "1.0.0",
+import ActivityView from "./components/ActivityView.vue";
+import AurralPane from "./components/AurralPane.vue";
+import AurralSidebar from "./components/AurralSidebar.vue";
+import PlayerBar from "./components/PlayerBar.vue";
+import SettingsPanel from "./components/SettingsPanel.vue";
+import { ACTIVITY_KEY, isListeningActivity, startStatus } from "./aurral/status";
+import { disposePlayer } from "./aurral/player";
+import { STYLESHEET } from "./styles";
+
+const PANE_ID = "com.jackgraddon.tumult.aurral.pane";
+const SETTINGS_ID = "com.jackgraddon.tumult.aurral.settings";
+
+/** Keep this in step with `tumult.plugin.json` at the repository root. */
+export const manifest: PluginManifest = {
+    id: "com.jackgraddon.tumult.aurral",
+    name: "Aurral",
+    version: "0.0.1",
+    author: "Jack Graddon",
+    description: "Your Aurral music library in Tumult, with a rich now-playing status.",
+    permissions: ["activity-renderers", "settings-tabs", "workspace-panes", "styles"],
+    minUI: "1.4.1",
+    minCore: "1.7.0",
 };
 
 export const plugin: Plugin = {
     manifest,
 
     install(ctx) {
-        ctx.injectStylesheet(`
-            .cc-example-shrug-message { font-family: var(--font-family-monospace, monospace); }
-        `);
+        const disposables = [
+            ctx.injectStylesheet(STYLESHEET),
+            ctx.addActivityRenderer({
+                id: "com.jackgraddon.tumult.aurral.activity-renderer",
+                key: ACTIVITY_KEY,
+                component: ActivityView,
+                priority: 10,
+                match: isListeningActivity,
+            }),
+            ctx.addSettingsTab({
+                id: SETTINGS_ID,
+                title: "Aurral",
+                component: SettingsPanel,
+                section: "plugins",
+            }),
+            ctx.addPane({
+                id: PANE_ID,
+                label: "Aurral",
+                icon: "music",
+                priority: 10,
+                content: AurralPane,
+                sidebar: AurralSidebar,
+                footer: PlayerBar,
+            }),
+            startStatus(ctx.client),
+        ];
 
-        ctx.addCommand({
-            name: "shrug",
-            description: "Append ¯\\_(ツ)_/¯ to your message",
-            usage: "<text>",
-            run: ({ args, roomId, client }) => {
-                const body = args ? `${args} ¯\\_(ツ)_/¯` : "¯\\_(ツ)_/¯";
-                return client.send(roomId, body);
-            },
-        });
+        return () => {
+            disposePlayer();
+            for (const dispose of disposables) dispose();
+        };
     },
 };
 
