@@ -136,12 +136,25 @@ export class AurralClient {
     }
 
     /**
+     * Aurral's queue/radio endpoints return media paths relative to the API
+     * root (e.g. `/library/stream/1/2`), while the HTTP route lives at
+     * `/api/library/stream/1/2`. The official client adds the prefix when it
+     * builds media URLs; do the same here or the request hits the web app and
+     * returns its HTML shell instead of audio.
+     */
+    apiPath(path: string): string {
+        if (/^https?:\/\//i.test(path)) return path;
+        if (path.startsWith("/api/")) return path;
+        return path.startsWith("/") ? `/api${path}` : `/api/${path}`;
+    }
+
+    /**
      * Build a token-authenticated URL for an `/api/...` asset. Aurral accepts
      * the session token in the query string for media URLs, which is how the
      * official client loads artwork and streams.
      */
     authenticatedAsset(path: string): string {
-        const url = new URL(this.serverUrl + path);
+        const url = new URL(this.serverUrl + this.apiPath(path));
         if (this.token) url.searchParams.set("token", this.token);
         return url.toString();
     }
@@ -220,11 +233,22 @@ export class AurralClient {
         headers.set("Authorization", `Bearer ${this.token}`);
         let response: Response;
         try {
-            response = await fetch(this.asset(path), { headers });
+            response = await fetch(this.asset(this.apiPath(path)), { headers });
         } catch {
             throw new AurralError(0, "network", "The audio stream could not be fetched.");
         }
         if (!response.ok) throw new AurralError(response.status, "stream_failed");
+        // A wrong media path can hit the web app's HTML shell with status 200;
+        // surface that clearly instead of letting <audio> emit an opaque
+        // "no supported source" error.
+        const contentType = response.headers.get("content-type") ?? "";
+        if (/^text\/html/i.test(contentType)) {
+            throw new AurralError(
+                response.status,
+                "stream_not_audio",
+                "The stream URL returned a web page, not audio. Check the server address and CORS_ORIGIN.",
+            );
+        }
         return response.blob();
     }
 
@@ -270,10 +294,10 @@ export class AurralClient {
      * `streamPath`. The official player uses this for album/artist playback.
      */
     radio(params: {
-        trackIds?: Array<string | number>;
-        albumIds?: Array<string | number>;
-        artists?: Array<string | number>;
-        exclude?: Array<string | number>;
+        trackIds?: string[];
+        albumIds?: string[];
+        artists?: Array<{ id?: string | null; mbid?: string | null; name?: string | null }>;
+        exclude?: string[];
         limit?: number;
     }): Promise<{ tracks: unknown[] }> {
         return this.request("/api/library/radio", {

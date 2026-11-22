@@ -5,11 +5,13 @@ import { currentClient } from "../aurral/session";
 import { artUrl } from "../aurral/model";
 import { itemArtwork, itemKind, itemSubtitle, itemTitle, type Item } from "../aurral/store";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
     item: Item;
     subtitle?: string;
     showPlay?: boolean;
-}>();
+}>(), {
+    showPlay: true,
+});
 
 const emit = defineEmits<{
     open: [item: Item];

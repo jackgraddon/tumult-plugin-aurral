@@ -6,11 +6,13 @@ import { artUrl } from "../aurral/model";
 import { currentTrack, state } from "../aurral/player";
 import { itemArtwork, itemDuration, itemStatus, itemSubtitle, itemTitle, type Item } from "../aurral/store";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
     item: Item;
     index: number;
     showArtwork?: boolean;
-}>();
+}>(), {
+    showArtwork: true,
+});
 
 const emit = defineEmits<{
     play: [item: Item];

@@ -403,7 +403,11 @@ export async function playItem(item: Item): Promise<void> {
     }
     ui.notice = null;
     try {
-        const payload = await client.radio(kind === "album" ? { albumIds: [id], limit: 500 } : { artists: [id], limit: 500 });
+        const payload = await client.radio(
+            kind === "album"
+                ? { albumIds: [id], limit: 100 }
+                : { artists: [{ id }], limit: 100 },
+        );
         const tracks = items(payload, ["tracks", "items"]).map((track) => normaliseTrack(client, track)).filter((track) => track.streamPath);
         if (!tracks.length) throw new Error("No playable tracks were returned.");
         setQueue(tracks, 0);
