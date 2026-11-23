@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
+import AuIcon from "./AuIcon.vue";
 import ConnectPanel from "./ConnectPanel.vue";
 import MediaCard from "./MediaCard.vue";
 import TrackRow from "./TrackRow.vue";
@@ -150,7 +151,7 @@ watch(session, (value) => {
     <div v-else class="au-app">
         <div class="au-page">
             <header class="au-page-header">
-                <button v-if="ui.detail" class="au-button au-button--icon" type="button" aria-label="Back" @click="closeDetail">←</button>
+                <button v-if="ui.detail" class="au-button au-button--icon" type="button" aria-label="Back" @click="closeDetail"><AuIcon name="back" /></button>
                 <div class="au-page-heading">
                     <div class="au-eyebrow">{{ pageEyebrow }}</div>
                     <h1>{{ pageTitle }}</h1>
@@ -167,7 +168,7 @@ watch(session, (value) => {
                         />
                         <button class="au-button" type="submit" :disabled="ui.loading">Search</button>
                     </form>
-                    <button class="au-button au-button--icon" type="button" aria-label="Refresh" title="Refresh" :disabled="ui.loading" @click="refresh">↻</button>
+                    <button class="au-button au-button--icon" type="button" aria-label="Refresh" title="Refresh" :disabled="ui.loading" @click="refresh"><AuIcon name="refresh" /></button>
                 </div>
             </header>
 
@@ -182,13 +183,13 @@ watch(session, (value) => {
                 <template v-if="ui.detail">
                     <section class="au-detail-hero">
                         <img v-if="detailArtwork" class="au-detail-art" :src="detailArtwork" :alt="`${ui.detail.title} artwork`" />
-                        <div v-else class="au-detail-art au-detail-art--empty" aria-hidden="true">♪</div>
+                        <div v-else class="au-detail-art au-detail-art--empty" aria-hidden="true"><AuIcon name="music" /></div>
                         <div class="au-detail-info">
                             <div class="au-detail-kind">{{ ui.detail.kind }}</div>
                             <h2>{{ ui.detail.title }}</h2>
                             <p>{{ detailSubtitle }}</p>
                             <div class="au-detail-actions">
-                                <button class="au-button au-button--primary" type="button" :disabled="ui.detail.loading" @click="playDetail">▶ Play</button>
+                                <button class="au-button au-button--primary" type="button" :disabled="ui.detail.loading" @click="playDetail"><AuIcon name="play" /> Play</button>
                                 <button class="au-button" type="button" :disabled="ui.detail.loading" @click="playDetail">⇄ Play all</button>
                             </div>
                         </div>
@@ -364,9 +365,9 @@ watch(session, (value) => {
                     </div>
 
                     <div class="au-pagination">
-                        <button class="au-button" type="button" :disabled="ui.page <= 1 || ui.loading" @click="previousPage">← Previous</button>
+                        <button class="au-button" type="button" :disabled="ui.page <= 1 || ui.loading" @click="previousPage"><AuIcon name="back" /> Previous</button>
                         <span class="au-muted">Page {{ ui.page }} · {{ ui.libraryTotal }} total</span>
-                        <button class="au-button" type="button" :disabled="!ui.hasMore || ui.loading" @click="nextPage">Next →</button>
+                        <button class="au-button" type="button" :disabled="!ui.hasMore || ui.loading" @click="nextPage">Next <AuIcon name="forward" /></button>
                     </div>
                 </template>
 

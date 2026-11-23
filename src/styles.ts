@@ -19,6 +19,20 @@ export const STYLESHEET = `
     font-family: var(--font-sans);
 }
 
+/* Material icons (inline SVG, including empty-art placeholders). */
+.au-icon {
+    display: inline-block;
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+.au-brand-mark .au-icon,
+.au-nav-icon .au-icon,
+.au-button--icon .au-icon { display: block; margin: auto; }
+.au-card-art--empty .au-icon,
+.au-detail-art--empty .au-icon { font-size: 2.5em; opacity: .6; }
+.au-card-play .au-icon,
+.au-button--primary .au-icon { display: block; margin: auto; }
+
 /* ---- Page shell ------------------------------------------------------- */
 
 .au-page {

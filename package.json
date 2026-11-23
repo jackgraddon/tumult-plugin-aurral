@@ -1,7 +1,7 @@
 {
     "name": "tumult-plugin-aurral",
     "private": true,
-    "version": "0.0.3",
+    "version": "0.0.4",
     "type": "module",
     "packageManager": "pnpm@11.13.1",
     "description": "Aurral in Tumult: a music player and rich now-playing status.",
@@ -12,6 +12,7 @@
         "release:dry": "pnpm build && node scripts/make-release-manifest.mjs"
     },
     "devDependencies": {
+        "@mdi/js": "^7.4.47",
         "@vitejs/plugin-vue": "^6.0.9",
         "typescript": "^5.9.3",
         "vite": "^7.3.7",

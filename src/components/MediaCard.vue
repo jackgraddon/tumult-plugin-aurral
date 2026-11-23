@@ -4,6 +4,7 @@ import { computed } from "vue";
 import { currentClient } from "../aurral/session";
 import { artUrl } from "../aurral/model";
 import { itemArtwork, itemKind, itemSubtitle, itemTitle, type Item } from "../aurral/store";
+import AuIcon from "./AuIcon.vue";
 
 const props = withDefaults(defineProps<{
     item: Item;
@@ -50,14 +51,14 @@ const hasArtwork = computed(() => artwork.value !== null);
     >
         <div class="au-card-art-wrap">
             <img v-if="artwork" class="au-card-art" :src="artwork" :alt="`${title} artwork`" />
-            <div v-else class="au-card-art au-card-art--empty" aria-hidden="true">♪</div>
+            <div v-else class="au-card-art au-card-art--empty" aria-hidden="true"><AuIcon name="music" /></div>
             <button
                 v-if="showPlay !== false"
                 class="au-card-play au-button au-button--primary"
                 type="button"
                 :aria-label="`Play ${title}`"
                 @click.stop="emit('play', item)"
-            >▶</button>
+            ><AuIcon name="play" /></button>
         </div>
         <div class="au-card-title" :title="title">{{ title }}</div>
         <div class="au-card-subtitle" :title="subtitle">{{ subtitle }}</div>

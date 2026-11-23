@@ -5,6 +5,7 @@ import { currentClient } from "../aurral/session";
 import { artUrl } from "../aurral/model";
 import { currentTrack, state } from "../aurral/player";
 import { itemArtwork, itemDuration, itemStatus, itemSubtitle, itemTitle, type Item } from "../aurral/store";
+import AuIcon from "./AuIcon.vue";
 
 const props = withDefaults(defineProps<{
     item: Item;
@@ -44,7 +45,7 @@ const isCurrent = computed(() => {
         @keydown.enter="emit('play', item)"
     >
         <span class="au-track-index">
-            <span v-if="isCurrent && state.playing" aria-hidden="true">♫</span>
+            <AuIcon v-if="isCurrent && state.playing" name="music" />
             <span v-else>{{ index + 1 }}</span>
         </span>
         <img v-if="showArtwork !== false && artwork" class="au-track-art" :src="artwork" alt="" />
@@ -54,7 +55,7 @@ const isCurrent = computed(() => {
         </div>
         <span v-if="status" class="au-badge">{{ status }}</span>
         <span class="au-track-time">{{ duration }}</span>
-        <button class="au-button au-button--icon" type="button" :aria-label="`Play ${title}`" @click.stop="emit('play', item)">▶</button>
-        <button class="au-button au-button--icon" type="button" aria-label="Open details" @click.stop="emit('open', item)">⋯</button>
+        <button class="au-button au-button--icon" type="button" :aria-label="`Play ${title}`" @click.stop="emit('play', item)"><AuIcon name="play" /></button>
+        <button class="au-button au-button--icon" type="button" aria-label="Open details" @click.stop="emit('open', item)"><AuIcon name="dots" /></button>
     </div>
 </template>

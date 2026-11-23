@@ -63,7 +63,10 @@ export function durationMs(value: unknown, keys: string[]): number {
 
 /** Resolve an artwork value that may be a full URL or a server-relative path. */
 export function artUrl(client: AurralClient | null, value: unknown, keys: string[]): string | null {
-    const found = field(value, keys);
+    // Callers pass both raw entities (extract the URL by key) and URLs that
+    // itemArtwork()/detail state already extracted. A string is already the
+    // artwork value — treating it as an object to search would lose it.
+    const found = typeof value === "string" && value ? value : field(value, keys);
     if (typeof found !== "string" || !found) return null;
     if (/^https?:\/\//i.test(found) || found.startsWith("data:") || found.startsWith("blob:")) return found;
     if (!client || !found.startsWith("/")) return null;

@@ -1,25 +1,26 @@
 <script setup lang="ts">
+import AuIcon from "./AuIcon.vue";
 import { session } from "../aurral/session";
 import { refresh, setView, ui, type View } from "../aurral/store";
 
 const primary: Array<{ id: View; label: string; icon: string }> = [
-    { id: "discover", label: "Discover", icon: "⌂" },
-    { id: "search", label: "Search", icon: "⌕" },
-    { id: "library", label: "Library", icon: "▤" },
-    { id: "playlists", label: "Playlists", icon: "☰" },
-    { id: "activity", label: "Activity", icon: "↗" },
+    { id: "discover", label: "Discover", icon: "discover" },
+    { id: "search", label: "Search", icon: "search" },
+    { id: "library", label: "Library", icon: "library" },
+    { id: "playlists", label: "Playlists", icon: "playlists" },
+    { id: "activity", label: "Activity", icon: "activity" },
 ];
 
 const secondary: Array<{ id: View; label: string; icon: string }> = [
-    { id: "people", label: "People", icon: "☺" },
-    { id: "shares", label: "Share links", icon: "↗" },
+    { id: "people", label: "People", icon: "people" },
+    { id: "shares", label: "Share links", icon: "shares" },
 ];
 </script>
 
 <template>
     <nav class="au-nav">
         <div class="au-brand">
-            <span class="au-brand-mark" aria-hidden="true">♫</span>
+            <span class="au-brand-mark"><AuIcon name="music" /></span>
             <span>Aurral</span>
         </div>
 
@@ -32,7 +33,7 @@ const secondary: Array<{ id: View; label: string; icon: string }> = [
             type="button"
             @click="setView(item.id)"
         >
-            <span class="au-nav-icon" aria-hidden="true">{{ item.icon }}</span>
+            <span class="au-nav-icon"><AuIcon :name="item.icon" /></span>
             {{ item.label }}
         </button>
 
@@ -45,12 +46,15 @@ const secondary: Array<{ id: View; label: string; icon: string }> = [
             type="button"
             @click="setView(item.id)"
         >
-            <span class="au-nav-icon" aria-hidden="true">{{ item.icon }}</span>
+            <span class="au-nav-icon"><AuIcon :name="item.icon" /></span>
             {{ item.label }}
         </button>
 
         <div class="au-nav-spacer"></div>
-        <button v-if="session" class="au-nav-item" type="button" @click="refresh">↻ Refresh</button>
+        <button v-if="session" class="au-nav-item" type="button" @click="refresh">
+            <span class="au-nav-icon"><AuIcon name="refresh" /></span>
+            Refresh
+        </button>
         <div v-if="session" class="au-nav-user" :title="session.user.username">
             <span class="au-nav-avatar" aria-hidden="true">{{ session.user.username.slice(0, 1).toUpperCase() }}</span>
             <span class="au-nav-user-name">{{ session.user.username }}</span>
