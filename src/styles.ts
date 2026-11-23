@@ -19,17 +19,20 @@ export const STYLESHEET = `
     font-family: var(--font-sans);
 }
 
-/* Material icons (inline SVG, including empty-art placeholders). */
+/* Material icons (inline SVG, drawn with the theme's currentColor). */
 .au-icon {
     display: inline-block;
     flex-shrink: 0;
     vertical-align: middle;
+    width: 1em;
+    height: 1em;
 }
 .au-brand-mark .au-icon,
 .au-nav-icon .au-icon,
 .au-button--icon .au-icon { display: block; margin: auto; }
-.au-card-art--empty .au-icon,
-.au-detail-art--empty .au-icon { font-size: 2.5em; opacity: .6; }
+/* Empty-art placeholders: show a geometric fallback in muted theme color. */
+.au-card-art--empty,
+.au-detail-art--empty { width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
 .au-card-play .au-icon,
 .au-button--primary .au-icon { display: block; margin: auto; }
 
@@ -622,11 +625,11 @@ export const STYLESHEET = `
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     padding: var(--space-2) var(--space-4);
     border-top: var(--border-width) solid var(--border-default);
     background: var(--surface-raised);
-    min-height: 64px;
+    min-height: 80px;
 }
 
 .au-player-art {
@@ -675,7 +678,7 @@ export const STYLESHEET = `
     accent-color: var(--accent);
 }
 .au-player-progress { flex: 1 1 auto; min-width: 80px; }
-.au-player-volume { width: 88px; flex: 0 0 auto; }
+.au-player-volume { width: 88px; flex: 0 0 auto; background: var(--surface-inset); }
 .au-player-progress::-webkit-slider-thumb,
 .au-player-volume::-webkit-slider-thumb {
     -webkit-appearance: none;
