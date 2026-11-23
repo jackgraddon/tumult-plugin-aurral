@@ -529,15 +529,6 @@ export const STYLESHEET = `
 }
 .au-button:focus-visible { outline: 2px solid var(--focus-ring, var(--accent)); outline-offset: 1px; }
 .au-button:disabled { opacity: var(--state-disabled-opacity, 0.5); cursor: default; }
-.au-button--primary {
-    border-color: transparent;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
-}
-.au-button--primary:hover:not(:disabled) {
-    background: var(--accent-hover, var(--accent));
-    border-color: transparent;
-}
 .au-button--icon {
     min-width: 32px;
     min-height: 32px;
@@ -546,6 +537,20 @@ export const STYLESHEET = `
     border-color: transparent;
 }
 .au-button--icon:hover:not(:disabled) { background: var(--state-hover, var(--surface-hover)); border-color: transparent; }
+/* Primary wins over the generic icon reset: the play button must keep its
+   accent fill, and its glyph must use the theme's primary-button text token. */
+.au-button--primary,
+.au-button--primary.au-button--icon {
+    border-color: transparent;
+    background: var(--accent);
+    color: var(--button-primary-text, var(--accent-contrast, #fff));
+}
+.au-button--primary:hover:not(:disabled),
+.au-button--primary.au-button--icon:hover:not(:disabled) {
+    background: var(--accent-hover, var(--accent));
+    border-color: transparent;
+    color: var(--button-primary-text, var(--accent-contrast, #fff));
+}
 
 .au-link { color: var(--accent); font-size: var(--text-sm); }
 .au-link-button {
@@ -621,15 +626,27 @@ export const STYLESHEET = `
 
 /* ---- Player footer ---------------------------------------------------- */
 
+/* Two rows inside the pane's footer: metadata/controls, then seek/volume.
+   A single nowrap row overflowed and got clipped in narrow workspace panes. */
 .au-player {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--space-2);
+    flex: 1 1 auto;
+    min-height: 96px;
+    padding: var(--space-2) var(--space-4);
+    overflow: hidden;
+    border-top: var(--border-width) solid var(--border-default);
+    background: var(--surface-raised);
+    container-type: inline-size;
+}
+
+.au-player-head {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    flex: 1 1 auto;
-    padding: var(--space-2) var(--space-4);
-    border-top: var(--border-width) solid var(--border-default);
-    background: var(--surface-raised);
-    min-height: 80px;
+    min-width: 0;
 }
 
 .au-player-art {
@@ -640,7 +657,7 @@ export const STYLESHEET = `
     object-fit: cover;
     background: var(--surface-inset, var(--surface-overlay));
 }
-.au-player-info { flex: 0 1 200px; min-width: 0; }
+.au-player-info { flex: 1 1 auto; min-width: 0; }
 .au-player-title,
 .au-player-artist {
     overflow: hidden;
@@ -652,13 +669,13 @@ export const STYLESHEET = `
 
 .au-player-controls { display: flex; align-items: center; gap: var(--space-1); flex: 0 0 auto; }
 .au-player-controls .au-button--primary { min-width: 36px; min-height: 36px; border-radius: 50%; }
+.au-player-external { flex: 0 0 auto; color: var(--text-secondary); }
 
 .au-player-timeline {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    flex: 1 1 auto;
-    min-width: 120px;
+    min-width: 0;
 }
 .au-player-time {
     color: var(--text-muted);
@@ -667,37 +684,44 @@ export const STYLESHEET = `
     flex: 0 0 auto;
 }
 
-.au-player-progress,
-.au-player-volume {
+/* Both sliders share one identity: an accent-filled track with a matching
+   thumb. The --au-fill custom property is set inline from the player state. */
+.au-slider {
     appearance: none;
     -webkit-appearance: none;
-    height: 4px;
+    height: 6px;
+    margin: 0;
+    border: 0;
     border-radius: 999px;
-    background: var(--surface-inset, var(--border-default));
+    background: linear-gradient(
+        to right,
+        var(--accent) 0%,
+        var(--accent) var(--au-fill, 0%),
+        var(--surface-inset, var(--border-default)) var(--au-fill, 0%),
+        var(--surface-inset, var(--border-default)) 100%
+    );
     cursor: pointer;
-    accent-color: var(--accent);
+    outline-offset: 3px;
 }
-.au-player-progress { flex: 1 1 auto; min-width: 80px; }
-.au-player-volume { width: 88px; flex: 0 0 auto; background: var(--surface-inset); }
-.au-player-progress::-webkit-slider-thumb,
-.au-player-volume::-webkit-slider-thumb {
+.au-slider:focus-visible { outline: 2px solid var(--focus-ring, var(--accent)); }
+.au-slider:disabled { opacity: var(--state-disabled-opacity, 0.5); cursor: default; }
+.au-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 12px;
     height: 12px;
-    border: 0;
+    border: 2px solid var(--accent);
     border-radius: 50%;
-    background: var(--text-primary);
+    background: var(--button-primary-text, var(--accent-contrast, #fff));
 }
-.au-player-progress::-moz-range-thumb,
-.au-player-volume::-moz-range-thumb {
+.au-slider::-moz-range-thumb {
     width: 12px;
     height: 12px;
-    border: 0;
+    border: 2px solid var(--accent);
     border-radius: 50%;
-    background: var(--text-primary);
+    background: var(--button-primary-text, var(--accent-contrast, #fff));
 }
-
-.au-player-actions { display: flex; align-items: center; gap: var(--space-1); flex: 0 0 auto; }
+.au-player-progress { flex: 1 1 auto; min-width: 60px; }
+.au-player-volume { width: 80px; flex: 0 0 auto; }
 
 /* ---- Connect screen --------------------------------------------------- */
 
@@ -791,10 +815,13 @@ export const STYLESHEET = `
 }
 .au-activity-links a:hover { background: var(--button-secondary-bg-hover, var(--state-hover, var(--surface-hover))); }
 
-/* Narrow panes: drop the least important player chrome first. */
+/* Workspace panes are narrower than the window, so react to the player's
+   own width, not the viewport. Drop the least important chrome first. */
+@container (max-width: 420px) {
+    .au-player-volume { display: none; }
+    .au-player-external { display: none; }
+}
 @media (max-width: 720px) {
-    .au-player-volume,
-    .au-player-actions .au-player-volume-label { display: none; }
     .au-search--header { min-width: 160px; }
     .au-detail-art { width: 104px; height: 104px; }
 }

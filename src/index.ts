@@ -29,7 +29,7 @@ const SETTINGS_ID = "com.jackgraddon.tumult.aurral.settings";
 export const manifest: PluginManifest = {
     id: "com.jackgraddon.tumult.aurral",
     name: "Aurral",
-    version: "0.0.5",
+    version: "0.0.6",
     author: "Jack Graddon",
     description: "Your Aurral music library in Tumult, with a rich now-playing status.",
     permissions: ["activity-renderers", "settings-tabs", "workspace-panes", "styles"],
