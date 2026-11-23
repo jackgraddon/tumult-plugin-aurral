@@ -2,7 +2,7 @@
     "$schema": "./tumult.plugin.schema.json",
     "id": "com.jackgraddon.tumult.aurral",
     "name": "Aurral",
-    "version": "0.0.6",
+    "version": "0.0.7",
     "author": "Jack Graddon",
     "description": "Your Aurral music library in Tumult, with a rich now-playing status.",
     "minUI": "1.4.1",

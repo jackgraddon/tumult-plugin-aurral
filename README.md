@@ -86,7 +86,7 @@ pnpm typecheck      # checks against the vendored plugin types
 Tag a release matching the manifest version to publish it:
 
 ```sh
-git tag v0.0.6 && git push origin v0.0.6
+git tag v0.0.7 && git push origin v0.0.7
 ```
 
 The workflow builds, hashes and attaches `plugin.js` and `tumult.plugin.json`.
