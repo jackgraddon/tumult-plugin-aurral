@@ -19,9 +19,10 @@ playback, and therefore always knows the current song.
 - **Playback** — restores/saves the Aurral play queue, streams through short-lived
   tokens, publishes `now-playing` events, and syncs the queue across devices.
 - **Rich status** — writes a plugin-owned extended profile field that Tumult's
-  activity renderer shows in member rows, the user bar and profile cards. It
-  also sets the plain Matrix status line for other clients. Both are cleared
-  when playback stops or the plugin is uninstalled.
+  activity renderer shows in member rows, the user bar and profile cards. The
+  plain Matrix status line is not touched. A paused song stays visible for 15
+  seconds, then the field is cleared; resuming keeps it. Uninstalling or signing
+  out clears it immediately.
 - **Squigly link** — built from track metadata as
   `https://squigly.link/song/<artist-slug>/<title-slug>`.
 
@@ -86,7 +87,7 @@ pnpm typecheck      # checks against the vendored plugin types
 Tag a release matching the manifest version to publish it:
 
 ```sh
-git tag v0.0.8 && git push origin v0.0.8
+git tag v0.0.9 && git push origin v0.0.9
 ```
 
 The workflow builds, hashes and attaches `plugin.js` and `tumult.plugin.json`.
@@ -105,7 +106,7 @@ The plugin declares `workspace-panes`, `settings-tabs`, `activity-renderers` and
 | `src/aurral/client.ts` | typed Aurral v2 API client and session login |
 | `src/aurral/session.ts` | persisted session token (never the password) |
 | `src/aurral/player.ts` | audio element, queue state, transport, now-playing publishing |
-| `src/aurral/status.ts` | activity document, Squigly URL, Matrix status line |
+| `src/aurral/status.ts` | activity document, Squigly URL, rich-status publishing |
 | `src/aurral/store.ts` | reactive data for the pane's views |
 | `src/components/` | Vue components for the pane, sidebar, player, settings and activity |
 | `src/styles.ts` | injected stylesheet — CSS must not live in an SFC `<style>` block |
@@ -116,7 +117,10 @@ The plugin declares `workspace-panes`, `settings-tabs`, `activity-renderers` and
 
 - `minUI`/`minCore` are declared in both manifests because the plugin needs the
   newer activity and workspace-pane APIs.
-- Squigly has no public lookup API; the slug link is constructed from metadata.
-  It may not resolve for unusual titles or non-Latin scripts.
+- Squigly's own `/api/create` flow is locked to the `https://squigly.link`
+  origin, so the plugin builds pretty URLs from track metadata instead. Its
+  artist/title slugs are NFKD-folded, lower-case, hyphenated and truncated to
+  40 characters; apostrophes count as separators (`Heaven's` → `heaven-s`).
+  Links may still miss when Squigly's canonical credits differ from Aurral's.
 - If the server does not advertise extended profile fields, the rich activity
-  card is unavailable but the plain status line still works.
+  card is unavailable; the plugin does not fall back to a plain status line.

@@ -1,12 +1,10 @@
 /**
  * Rich now-playing status.
  *
- * Two surfaces are written, because they reach different audiences:
- *
- *   - a plugin-owned extended profile field, drawn by our activity renderer in
- *     Tumult member rows, the user bar and profile cards, with artwork, artist
- *     image, title, album, a progress window and a Squigly link button;
- *   - a plain Matrix status line, which other clients show next to the name.
+ * The plugin publishes one surface only: a plugin-owned extended profile
+ * field, drawn by our activity renderer in Tumult member rows, the user bar
+ * and profile cards, with artwork, artist image, title, album, a progress
+ * window and a Squigly link button. The plain Matrix status line is left alone.
  *
  * The profile field is deliberately not `app.tumult.activity`: the shell owns
  * that document, and a second writer would fight its controller.
@@ -18,6 +16,8 @@ import type { AurralTrack } from "./client";
 export const ACTIVITY_KEY = "com.jackgraddon.tumult.aurral.activity";
 const VERSION = 1;
 const MAX_TEXT = 128;
+const PAUSED_CLEAR_MS = 15_000;
+const SQUIGLY_SLUG_LENGTH = 40;
 
 export interface ListeningActivity {
     v: 1;
@@ -36,7 +36,8 @@ let client: ChatClient | null = null;
 let supportsFields = false;
 let checkedFields = false;
 let lastPublished: string | null = null;
-let previousStatus: string | null = null;
+let clearTimer: ReturnType<typeof setTimeout> | null = null;
+let writeQueue: Promise<void> = Promise.resolve();
 
 /** Turn a song's metadata into a Squigly universal link. */
 export function squiglyUrl(track: AurralTrack): string | null {
@@ -46,21 +47,20 @@ export function squiglyUrl(track: AurralTrack): string | null {
     return `https://squigly.link/song/${artist}/${title}`;
 }
 
+/**
+ * Squigly's pretty URLs use NFKD-folded, lower-case, hyphenated artist/title
+ * slugs capped at 40 characters. Apostrophes are separators, not removed:
+ * "Heaven's Door" is `heaven-s-door`, not `heavens-door`.
+ */
 function slug(value: string): string {
     return value
         .normalize("NFKD")
         .replace(/[\u0300-\u036f]/g, "")
         .toLowerCase()
-        .replace(/['’]/g, "")
         .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "");
-}
-
-function statusText(track: AurralTrack): string {
-    const artist = String(track.artistName ?? "").trim();
-    const title = String(track.title ?? "").trim();
-    const name = artist && title ? `${artist} — ${title}` : artist || title;
-    return `Listening to ${name}`;
+        .replace(/^-+|-+$/g, "")
+        .slice(0, SQUIGLY_SLUG_LENGTH)
+        .replace(/-+$/g, "");
 }
 
 /** Only absolute HTTP(S) URLs are accepted by the shell's activity renderer. */
@@ -71,6 +71,18 @@ function safeUrl(value: unknown): string | null {
 
 function clip(value: string, max = MAX_TEXT): string {
     return value.slice(0, max);
+}
+
+/** Keep profile-field writes in call order so a late clear cannot win. */
+function enqueueWrite(write: () => Promise<void>): Promise<void> {
+    writeQueue = writeQueue.then(write, write);
+    return writeQueue;
+}
+
+function cancelPendingClear(): void {
+    if (clearTimer === null) return;
+    clearTimeout(clearTimer);
+    clearTimer = null;
 }
 
 /** Validate the arbitrary JSON a profile field returns. */
@@ -91,11 +103,11 @@ export function isListeningActivity(value: unknown): value is ListeningActivity 
 
 /** Start the status publisher; the returned function stops and clears it. */
 export function startStatus(shell: ChatClient): Disposable {
+    cancelPendingClear();
     client = shell;
     lastPublished = null;
     checkedFields = false;
     supportsFields = false;
-    previousStatus = shell.ownPresence.get()?.statusMessage ?? null;
     void shell.profileFieldsSupported()
         .then((supported) => {
             supportsFields = supported;
@@ -111,19 +123,20 @@ export function startStatus(shell: ChatClient): Disposable {
     };
 }
 
-/** Publish (or update) the status for a playing track. */
+/** Publish (or update) the rich status for a playing track. */
 export async function publishListening(
     track: AurralTrack | null,
     positionMs: number,
     playing: boolean,
 ): Promise<void> {
+    // Any new playback signal means the pause grace period is over.
+    cancelPendingClear();
     const shell = client;
     if (!shell || !track || !playing) return;
     const title = String(track.title ?? "").trim();
     if (!title) return;
 
     const link = squiglyUrl(track);
-    const text = statusText(track);
     const key = JSON.stringify([title, track.artistName, track.albumName, link, Math.floor(positionMs / 1000)]);
     if (key === lastPublished) return;
     lastPublished = key;
@@ -157,39 +170,40 @@ export async function publishListening(
     const duration = typeof track.durationMs === "number" ? track.durationMs : 0;
     if (duration > 0) activity.endsAt = activity.startedAt + duration;
 
-    if (supportsFields) {
+    if (!supportsFields) return;
+    await enqueueWrite(async () => {
         try {
             await shell.setProfileField(ACTIVITY_KEY, activity);
         } catch {
             supportsFields = false;
         }
-    }
-    try {
-        await shell.setOwnPresence("online", `${text}${link ? ` — ${link}` : ""}`);
-    } catch {
-        // Presence may be disabled by the homeserver. The music keeps playing.
-    }
+    });
 }
 
+/** Clear the rich status after a short pause, so brief stops do not flicker. */
+export function scheduleClearListening(delayMs = PAUSED_CLEAR_MS): void {
+    cancelPendingClear();
+    if (!client || lastPublished === null) return;
+    clearTimer = setTimeout(() => {
+        clearTimer = null;
+        void clearListening();
+    }, delayMs);
+}
+
+/** Remove the rich status immediately (uninstall, sign-out, teardown). */
 export async function clearListening(): Promise<void> {
+    cancelPendingClear();
     const shell = client;
     if (!shell || lastPublished === null) return;
     lastPublished = null;
-    if (supportsFields) {
+    if (!supportsFields) return;
+    await enqueueWrite(async () => {
         try {
             await shell.setProfileField(ACTIVITY_KEY, null);
         } catch {
             // Nothing else to do.
         }
-    }
-    try {
-        const current = shell.ownPresence.get()?.statusMessage ?? null;
-        if (current === null || current.startsWith("Listening to ")) {
-            await shell.setOwnPresence("online", previousStatus ?? undefined);
-        }
-    } catch {
-        // Nothing else to do.
-    }
+    });
 }
 
 function pickArtistImage(track: AurralTrack): string | null {

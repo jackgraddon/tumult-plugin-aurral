@@ -13,7 +13,7 @@ import { computed, reactive, type ComputedRef } from "vue";
 import { AurralClient, type AurralTrack, type PlayQueue } from "./client";
 import { currentClient } from "./session";
 import { normaliseTrack, record, text } from "./model";
-import { publishListening, clearListening } from "./status";
+import { publishListening, clearListening, scheduleClearListening } from "./status";
 
 const SAVE_THROTTLE_MS = 5000;
 const DEVICE = "Tumult";
@@ -118,6 +118,7 @@ function element(): HTMLAudioElement {
         state.error = "This track could not be played.";
         state.playing = false;
         state.loading = false;
+        scheduleClearListening();
     });
     return audio;
 }
@@ -175,6 +176,7 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
         if (token !== loadToken) return;
         state.error = cause instanceof Error ? cause.message : "Playback failed.";
         state.playing = false;
+        scheduleClearListening();
     } finally {
         if (token === loadToken) state.loading = false;
     }
@@ -216,7 +218,7 @@ export async function toggle(): Promise<void> {
         element().pause();
         state.playing = false;
         void saveQueue();
-        void clearListening();
+        scheduleClearListening();
     } else if (objectUrl) {
         await element().play();
         state.playing = true;
@@ -232,7 +234,7 @@ export async function next(): Promise<void> {
     else {
         stopAudio();
         state.positionMs = 0;
-        void clearListening();
+        scheduleClearListening();
     }
 }
 
