@@ -128,20 +128,25 @@ function shareUrl(item: Item): string {
     return String(item.url ?? item.shareUrl ?? item.link ?? item.shortUrl ?? "");
 }
 
+function restoreQueue(): void {
+    const client = currentClient();
+    if (!client) return;
+    void client.getPlayQueue()
+        .then((payload) => loadQueue(payload.queue))
+        .catch(() => {
+            // A missing queue is normal for a new account.
+        });
+}
+
 onMounted(() => {
     if (!connected.value) return;
     void refresh();
-    const client = currentClient();
-    if (client) {
-        void client.getPlayQueue()
-            .then((payload) => loadQueue(payload.queue))
-            .catch(() => {
-                // A missing queue is normal for a new account.
-            });
-    }
+    restoreQueue();
 });
 watch(session, (value) => {
-    if (value) void refresh();
+    if (!value) return;
+    void refresh();
+    restoreQueue();
 });
 </script>
 

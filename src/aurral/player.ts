@@ -182,8 +182,16 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
     }
 }
 
-/** Restore a saved (or externally changed) queue. Does not start playback. */
+/**
+ * Restore a saved queue once, without interrupting a live player.
+ *
+ * Tumult unmounts and remounts pane components when you navigate away and
+ * back, but this module (and its `audio` element) survive. Reapplying the
+ * server's saved queue on every mount would pause playback and rewind to the
+ * last throttled save, so only do it while the player is idle.
+ */
 export function loadQueue(queue: PlayQueue | null): void {
+    if (state.tracks.length > 0 || audio) return;
     ++loadToken;
     stopAudio();
     playEventSent = false;
@@ -287,13 +295,20 @@ export async function saveQueue(): Promise<void> {
     }
 }
 
-/** Tear everything down when the pane unmounts. */
+/** Tear everything down on sign-out or plugin uninstall, not on pane remount. */
 export function disposePlayer(): void {
     ++loadToken;
     stopAudio();
     if (audio) {
         audio = null;
     }
+    state.tracks = [];
+    state.index = 0;
+    state.positionMs = 0;
+    state.durationMs = 0;
+    state.playing = false;
+    state.loading = false;
+    state.error = null;
     void clearListening();
 }
 

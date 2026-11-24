@@ -41,7 +41,7 @@ function onVolume(event: Event): void {
                     </button>
                     <button class="au-button au-button--icon" type="button" aria-label="Next track" @click="next"><AuIcon name="next" /></button>
                 </div>
-                <a v-if="link" class="au-player-external au-button au-button--icon" :href="link" target="_blank" rel="noopener noreferrer" title="Open on Squigly"><AuIcon name="external" /></a>
+                <a v-if="link" class="au-player-share au-button au-button--icon" :href="link" target="_blank" rel="noopener noreferrer" title="Share on Squigly"><AuIcon name="share" /></a>
             </template>
             <span v-else class="au-muted">Nothing playing — pick something from your library.</span>
         </div>

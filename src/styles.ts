@@ -669,7 +669,7 @@ export const STYLESHEET = `
 
 .au-player-controls { display: flex; align-items: center; gap: var(--space-1); flex: 0 0 auto; }
 .au-player-controls .au-button--primary { min-width: 36px; min-height: 36px; border-radius: 50%; }
-.au-player-external { flex: 0 0 auto; color: var(--text-secondary); }
+.au-player-share { flex: 0 0 auto; color: var(--text-secondary); }
 
 .au-player-timeline {
     display: flex;
@@ -819,7 +819,7 @@ export const STYLESHEET = `
    own width, not the viewport. Drop the least important chrome first. */
 @container (max-width: 420px) {
     .au-player-volume { display: none; }
-    .au-player-external { display: none; }
+    .au-player-share { display: none; }
 }
 @media (max-width: 720px) {
     .au-search--header { min-width: 160px; }
