@@ -4,7 +4,6 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import AuIcon from "./AuIcon.vue";
 import ConnectPanel from "./ConnectPanel.vue";
 import MediaCard from "./MediaCard.vue";
-import PlayerBar from "./PlayerBar.vue";
 import TrackRow from "./TrackRow.vue";
 import { currentClient, session } from "../aurral/session";
 import { artUrl } from "../aurral/model";
@@ -86,11 +85,11 @@ function openCard(item: Item): void {
     const kind = itemKind(item);
     if (kind === "album" || kind === "artist" || kind === "playlist") openDetail(item, kind);
     else if (item.tracks || item.trackIds) openDetail(item, "album");
-    else void playItem(item);
+    else void playItem(item, kind);
 }
 
 function playCard(item: Item): void {
-    void playItem(item);
+    void playItem(item, itemKind(item));
 }
 
 function previousPage(): void {
@@ -469,9 +468,5 @@ watch(session, (value) => {
                 </template>
             </div>
         </div>
-
-        <!-- Owned by the pane, not the shell: the shell's footer is a shrinking
-             flex sibling and gets clipped in short viewports. -->
-        <PlayerBar />
     </div>
 </template>

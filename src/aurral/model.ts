@@ -80,8 +80,18 @@ export function artUrl(client: AurralClient | null, value: unknown, keys: string
 export function normaliseTrack(client: AurralClient | null, value: unknown): AurralTrack {
     const data = withMetadata(value);
     const files = list(data, ["files"]);
-    const fileStream = files.length
-        ? text(files[0], ["streamPath", "streamUrl", "url", "path", "audioUrl"])
+    const file = files.find((entry) => record(entry).available !== false) ?? files[0] ?? null;
+    const fileStream = file
+        ? text(file, ["streamPath", "streamUrl", "url", "path", "audioUrl"])
+        : "";
+    // Library track rows carry a file id and an album id rather than a stream
+    // URL. Aurral serves those as /library/stream/<albumId>/<fileId>; derive it
+    // here so library tracks are playable everywhere normaliseTrack is used.
+    const albums = list(data, ["albums"]);
+    const albumId = text(data, ["albumId"]) || (albums.length ? text(albums[0], ["albumId", "id"]) : "");
+    const fileId = file ? text(file, ["id"]) : "";
+    const derivedStream = !fileStream && albumId && fileId
+        ? `/library/stream/${encodeURIComponent(albumId)}/${encodeURIComponent(fileId)}`
         : "";
     const duration = durationMs(data, ["durationMs", "duration", "lengthMs", "length"]);
     return {
@@ -100,7 +110,7 @@ export function normaliseTrack(client: AurralClient | null, value: unknown): Aur
             "image",
         ]),
         durationMs: duration || null,
-        streamPath: text(data, ["streamPath", "streamUrl", "url", "path", "audioUrl"]) || fileStream || null,
+        streamPath: text(data, ["streamPath", "streamUrl", "url", "path", "audioUrl"]) || fileStream || derivedStream || null,
         artistImageUrl: artUrl(client, data, [
             "artistImageUrl",
             "artistArtworkUrl",

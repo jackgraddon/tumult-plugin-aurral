@@ -8,15 +8,10 @@
  * installer refuses both.
  */
 export const STYLESHEET = `
-/* The pane owns its whole layout: header, growing content, player. All three
-   rows live in this one column so nothing can be squeezed out by a sibling. */
 .au-app {
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
-    width: 100%;
-    height: 100%;
-    min-width: 0;
     min-height: 0;
     overflow: hidden;
     background: var(--surface-pane);
@@ -638,7 +633,7 @@ export const STYLESHEET = `
     flex-direction: column;
     justify-content: center;
     gap: var(--space-2);
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     min-height: 96px;
     padding: var(--space-2) var(--space-4);
     overflow: hidden;

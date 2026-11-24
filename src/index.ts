@@ -14,6 +14,7 @@
 import type { Plugin, PluginManifest } from "@tumult/ui";
 
 import ActivityView from "./components/ActivityView.vue";
+import PlayerBar from "./components/PlayerBar.vue";
 import AurralPane from "./components/AurralPane.vue";
 import AurralSidebar from "./components/AurralSidebar.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
@@ -28,7 +29,7 @@ const SETTINGS_ID = "com.jackgraddon.tumult.aurral.settings";
 export const manifest: PluginManifest = {
     id: "com.jackgraddon.tumult.aurral",
     name: "Aurral",
-    version: "0.0.7",
+    version: "0.0.8",
     author: "Jack Graddon",
     description: "Your Aurral music library in Tumult, with a rich now-playing status.",
     permissions: ["activity-renderers", "settings-tabs", "workspace-panes", "styles"],
@@ -62,6 +63,7 @@ export const plugin: Plugin = {
                 priority: 10,
                 content: AurralPane,
                 sidebar: AurralSidebar,
+                footer: PlayerBar,
             }),
             startStatus(ctx.client),
         ];
