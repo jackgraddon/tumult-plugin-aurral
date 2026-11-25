@@ -328,8 +328,7 @@ export const STYLESHEET = `
 .au-tracklist { display: flex; flex-direction: column; }
 
 .au-track {
-    display: grid;
-    grid-template-columns: 32px auto minmax(0, 1fr) auto auto auto;
+    display: flex;
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2);
@@ -344,19 +343,35 @@ export const STYLESHEET = `
 .au-track.is-current .au-track-title { color: var(--accent); }
 
 .au-track-index {
+    flex: 0 0 32px;
     color: var(--text-muted);
     font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
     text-align: center;
 }
+.au-track-content {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.au-track-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 0 0 auto;
+    margin-left: auto;
+}
 .au-track-art {
+    flex: 0 0 auto;
     width: 36px;
     height: 36px;
     border-radius: var(--radius-xs);
     object-fit: cover;
     background: var(--surface-inset, var(--surface-overlay));
 }
-.au-track-main { min-width: 0; }
+.au-track-main { flex: 1 1 auto; min-width: 0; }
 .au-track-title {
     overflow: hidden;
     font-size: var(--text-sm);
@@ -379,6 +394,38 @@ export const STYLESHEET = `
 .au-track .au-button { opacity: 0.55; }
 .au-track:hover .au-button,
 .au-track:focus-within .au-button { opacity: 1; }
+
+/* ---- Track action menu ------------------------------------------------- */
+
+.au-menu {
+    position: fixed;
+    z-index: 3000;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 190px;
+    padding: var(--space-1);
+    border: var(--border-width) solid var(--border-default);
+    border-radius: var(--control-radius, var(--radius-sm));
+    background: var(--surface-raised, var(--surface-overlay));
+    box-shadow: var(--shadow-md, 0 8px 24px rgb(0 0 0 / 25%));
+}
+.au-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-2);
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+}
+.au-menu-item:hover { background: var(--state-hover, var(--surface-hover)); }
+.au-menu-item:focus-visible { outline: 2px solid var(--focus-ring, var(--accent)); outline-offset: -2px; }
 
 /* ---- Detail hero ------------------------------------------------------ */
 

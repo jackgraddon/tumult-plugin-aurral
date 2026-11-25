@@ -29,7 +29,7 @@ const secondary: Array<{ id: View; label: string; icon: string }> = [
             v-for="item in primary"
             :key="item.id"
             class="au-nav-item"
-            :class="{ 'is-active': item.id === ui.view && !ui.detail }"
+            :class="{ 'is-active': item.id === ui.view }"
             type="button"
             @click="setView(item.id)"
         >
@@ -42,7 +42,7 @@ const secondary: Array<{ id: View; label: string; icon: string }> = [
             v-for="item in secondary"
             :key="item.id"
             class="au-nav-item"
-            :class="{ 'is-active': item.id === ui.view && !ui.detail }"
+            :class="{ 'is-active': item.id === ui.view }"
             type="button"
             @click="setView(item.id)"
         >

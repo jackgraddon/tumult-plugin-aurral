@@ -25,6 +25,7 @@ function signOut(): void {
     ui.playlists = [];
     ui.flows = [];
     ui.detail = null;
+    ui.detailStack = [];
     notice.value = "Signed out of Aurral.";
 }
 </script>

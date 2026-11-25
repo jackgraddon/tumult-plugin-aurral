@@ -139,6 +139,18 @@ function streamPathOf(track: AurralTrack): string | null {
     return typeof value === "string" && value ? value : null;
 }
 
+/** Every stream path worth trying for a track, in preference order. */
+function streamPathsOf(track: AurralTrack): string[] {
+    const paths = Array.isArray(track.streamPaths)
+        ? track.streamPaths.filter(
+              (path): path is string => typeof path === "string" && path.length > 0,
+          )
+        : [];
+    const primary = streamPathOf(track);
+    if (primary && !paths.includes(primary)) paths.unshift(primary);
+    return paths;
+}
+
 async function loadCurrent(autoplay: boolean): Promise<void> {
     const client = currentClient();
     const track = currentTrack.value;
@@ -146,10 +158,10 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
         stopAudio();
         return;
     }
-    const path = streamPathOf(track);
-    if (!path) {
+    const paths = streamPathsOf(track);
+    if (!paths.length) {
         stopAudio();
-        state.error = "This track has no playable stream.";
+        state.error = `No playable stream found for ${track.title}.`;
         return;
     }
 
@@ -159,8 +171,33 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
     playEventSent = false;
     stopAudio();
     try {
-        const blob = await client.fetchAudio(path);
-        if (token !== loadToken) return;
+        let blob: Blob | null = null;
+        let chosen: string | null = null;
+        let lastError: unknown = null;
+        for (const path of paths) {
+            if (token !== loadToken) return;
+            try {
+                blob = await client.fetchAudio(path);
+                if (token !== loadToken) return;
+                chosen = path;
+                break;
+            } catch (cause) {
+                if (token !== loadToken) return;
+                lastError = cause;
+            }
+        }
+        if (!blob || !chosen) {
+            const detail =
+                lastError instanceof Error
+                    ? lastError.message
+                    : lastError
+                      ? String(lastError)
+                      : "unknown error";
+            throw new Error(paths.length > 1 ? `${detail} (tried ${paths.length} files)` : detail);
+        }
+
+        // Remember the path that worked so queue saves and now-playing use it.
+        track.streamPath = chosen;
         objectUrl = URL.createObjectURL(blob);
         const el = element();
         pendingSeekMs = state.positionMs;
@@ -174,7 +211,8 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
         void publishListening(currentTrack.value, state.positionMs, state.playing);
     } catch (cause) {
         if (token !== loadToken) return;
-        state.error = cause instanceof Error ? cause.message : "Playback failed.";
+        const detail = cause instanceof Error ? cause.message : String(cause);
+        state.error = `Could not play ${track.title}: ${detail}`;
         state.playing = false;
         scheduleClearListening();
     } finally {

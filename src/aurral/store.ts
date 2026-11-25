@@ -71,6 +71,8 @@ export interface UiState {
     people: Item[];
     shares: Item[];
     detail: DetailState | null;
+    /** Detail pages left on the breadcrumb, so Back pops one level at a time. */
+    detailStack: DetailState[];
     notice: string | null;
 }
 
@@ -97,6 +99,7 @@ export const ui = reactive<UiState>({
     people: [],
     shares: [],
     detail: null,
+    detailStack: [],
     notice: null,
 });
 
@@ -328,6 +331,7 @@ export function setView(view: View): void {
     if (ui.view === view && !ui.detail) return;
     ui.view = view;
     ui.detail = null;
+    ui.detailStack = [];
     ui.error = null;
     void refresh();
 }
@@ -346,7 +350,9 @@ export function openDetail(item: Item, kind: DetailState["kind"]): void {
         ui.notice = "That item does not expose an id.";
         return;
     }
-    ui.view = kind === "playlist" ? "playlists" : "library";
+    // Keep the tab the user was already in: the detail page is a sub-view of
+    // that tab, not a jump to a different one.
+    if (ui.detail) ui.detailStack.push(ui.detail);
     ui.detail = {
         kind,
         id,
@@ -362,6 +368,14 @@ export function openDetail(item: Item, kind: DetailState["kind"]): void {
 }
 
 export function closeDetail(): void {
+    const previous = ui.detailStack.pop();
+    ui.error = null;
+    ui.notice = null;
+    if (previous) {
+        // The earlier detail still has its loaded tracks/albums; no refetch.
+        ui.detail = previous;
+        return;
+    }
     ui.detail = null;
     void refresh();
 }

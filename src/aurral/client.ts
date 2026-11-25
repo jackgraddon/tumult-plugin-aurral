@@ -38,6 +38,8 @@ export interface AurralTrack {
     artworkUrl?: string | null;
     durationMs?: number | null;
     streamPath?: string | null;
+    /** Every plausible stream path for this track, in preference order. */
+    streamPaths?: string[];
     previewUrl?: string | null;
     mbid?: string | null;
     [key: string]: unknown;
@@ -237,7 +239,22 @@ export class AurralClient {
         } catch {
             throw new AurralError(0, "network", "The audio stream could not be fetched.");
         }
-        if (!response.ok) throw new AurralError(response.status, "stream_failed");
+        if (!response.ok) {
+            // Aurral returns JSON such as {"error":"Track file missing"}.
+            // Surface it: a bare "stream_failed" tells the user nothing.
+            const raw = (await response.text().catch(() => "")).trim();
+            let detail = raw.slice(0, 300);
+            try {
+                const body = JSON.parse(raw) as { error?: string; message?: string };
+                detail = String(body.message || body.error || detail).slice(0, 300);
+            } catch {
+                // A proxy error page is plain text; the raw body is still useful.
+            }
+            const message = detail
+                ? `Stream failed (${response.status}): ${detail}`
+                : `Stream failed (${response.status})`;
+            throw new AurralError(response.status, "stream_failed", message);
+        }
         // A wrong media path can hit the web app's HTML shell with status 200;
         // surface that clearly instead of letting <audio> emit an opaque
         // "no supported source" error.

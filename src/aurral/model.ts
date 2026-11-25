@@ -77,22 +77,37 @@ export function artUrl(client: AurralClient | null, value: unknown, keys: string
         : client.asset(found);
 }
 
+const STREAM_KEYS = ["streamPath", "streamUrl", "url", "path", "audioUrl"];
+
 export function normaliseTrack(client: AurralClient | null, value: unknown): AurralTrack {
     const data = withMetadata(value);
-    const files = list(data, ["files"]);
-    const file = files.find((entry) => record(entry).available !== false) ?? files[0] ?? null;
-    const fileStream = file
-        ? text(file, ["streamPath", "streamUrl", "url", "path", "audioUrl"])
-        : "";
+    const allFiles = list(data, ["files"]);
+    // A file can be flagged available but still be missing on disk. Keep every
+    // candidate so the player can fall back instead of failing the whole track.
+    const files = [
+        ...allFiles.filter((entry) => record(entry).available !== false),
+        ...allFiles.filter((entry) => record(entry).available === false),
+    ];
     // Library track rows carry a file id and an album id rather than a stream
-    // URL. Aurral serves those as /library/stream/<albumId>/<fileId>; derive it
-    // here so library tracks are playable everywhere normaliseTrack is used.
+    // URL. Aurral serves those as /library/stream/<albumId>/<fileId>; derive one
+    // per file so library tracks are playable everywhere normaliseTrack is used.
     const albums = list(data, ["albums"]);
     const albumId = text(data, ["albumId"]) || (albums.length ? text(albums[0], ["albumId", "id"]) : "");
-    const fileId = file ? text(file, ["id"]) : "";
-    const derivedStream = !fileStream && albumId && fileId
-        ? `/library/stream/${encodeURIComponent(albumId)}/${encodeURIComponent(fileId)}`
-        : "";
+
+    const candidates: string[] = [];
+    const add = (path: string): void => {
+        if (path && !candidates.includes(path)) candidates.push(path);
+    };
+    add(text(data, STREAM_KEYS));
+    for (const file of files) {
+        add(text(file, STREAM_KEYS));
+        const fileAlbumId = text(file, ["albumId"]) || albumId;
+        const fileId = text(file, ["id", "fileId"]);
+        if (fileAlbumId && fileId) {
+            add(`/library/stream/${encodeURIComponent(fileAlbumId)}/${encodeURIComponent(fileId)}`);
+        }
+    }
+
     const duration = durationMs(data, ["durationMs", "duration", "lengthMs", "length"]);
     return {
         ...data,
@@ -110,7 +125,8 @@ export function normaliseTrack(client: AurralClient | null, value: unknown): Aur
             "image",
         ]),
         durationMs: duration || null,
-        streamPath: text(data, ["streamPath", "streamUrl", "url", "path", "audioUrl"]) || fileStream || derivedStream || null,
+        streamPath: candidates[0] ?? null,
+        streamPaths: candidates,
         artistImageUrl: artUrl(client, data, [
             "artistImageUrl",
             "artistArtworkUrl",

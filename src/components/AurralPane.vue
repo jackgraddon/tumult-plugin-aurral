@@ -424,12 +424,16 @@ watch(session, (value) => {
                     <div class="au-tracklist">
                         <div v-for="(item, index) in ui.activity.items" :key="String(item.id ?? index)" class="au-track">
                             <span class="au-track-index">{{ index + 1 }}</span>
-                            <div class="au-track-main">
-                                <div class="au-track-title">{{ itemTitle(item) }}</div>
-                                <div class="au-track-sub">{{ itemSubtitle(item) }}</div>
+                            <div class="au-track-content">
+                                <div class="au-track-main">
+                                    <div class="au-track-title">{{ itemTitle(item) }}</div>
+                                    <div class="au-track-sub">{{ itemSubtitle(item) }}</div>
+                                </div>
                             </div>
-                            <span v-if="item.status" class="au-badge">{{ item.status }}</span>
-                            <span class="au-track-time">{{ item.phase ?? item.cause ?? "" }}</span>
+                            <div class="au-track-meta">
+                                <span v-if="item.status" class="au-badge">{{ item.status }}</span>
+                                <span class="au-track-time">{{ item.phase ?? item.cause ?? "" }}</span>
+                            </div>
                         </div>
                     </div>
 
@@ -458,12 +462,16 @@ watch(session, (value) => {
                 <template v-else-if="ui.view === 'shares'">
                     <div class="au-tracklist">
                         <div v-for="(item, index) in ui.shares" :key="String(item.id ?? index)" class="au-track">
-                            <div class="au-track-main">
-                                <div class="au-track-title">{{ itemTitle(item) }}</div>
-                                <div class="au-track-sub">{{ itemSubtitle(item) }}</div>
+                            <div class="au-track-content">
+                                <div class="au-track-main">
+                                    <div class="au-track-title">{{ itemTitle(item) }}</div>
+                                    <div class="au-track-sub">{{ itemSubtitle(item) }}</div>
+                                </div>
                             </div>
-                            <a v-if="shareUrl(item)" class="au-link" :href="shareUrl(item)" target="_blank" rel="noopener noreferrer">Open</a>
-                            <span v-if="item.expiresAt" class="au-badge">Expires {{ item.expiresAt }}</span>
+                            <div class="au-track-meta">
+                                <a v-if="shareUrl(item)" class="au-link" :href="shareUrl(item)" target="_blank" rel="noopener noreferrer">Open</a>
+                                <span v-if="item.expiresAt" class="au-badge">Expires {{ item.expiresAt }}</span>
+                            </div>
                         </div>
                     </div>
                     <div v-if="!ui.shares.length && !ui.loading" class="au-empty">
