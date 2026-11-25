@@ -664,7 +664,16 @@ export function itemArtwork(item: Item): string | null {
         "avatarUrl",
         "artistImageUrl",
     ]);
-    return value || null;
+    if (value) return value;
+
+    // Flows and static playlists only carry an artworkRevision; the official
+    // client derives the image URL from it. artUrl() adds the session token,
+    // which this route needs to return an image instead of a 401.
+    const id = itemId(item);
+    const revision = text(data, ["artworkRevision"]);
+    if (!id || !revision) return null;
+    const query = new URLSearchParams({ v: revision });
+    return `/api/playlists/artwork/${encodeURIComponent(id)}?${query}`;
 }
 
 export function itemDuration(item: Item): string {
