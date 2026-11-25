@@ -461,16 +461,24 @@ function playableTracks(client: AurralClient, values: unknown[]): AurralTrack[] 
  * Preview endpoints return bare track rows. Fill in the artist/album/artwork
  * from the card the user clicked so the player and rich status stay useful.
  */
-function withCardContext(item: Item, kind: string, values: unknown[]): Item[] {
+function withCardContext(item: Item, kind: string, values: unknown[], artistMbidHint?: string | null): Item[] {
     const artist = kind === "artist" ? itemTitle(item) : itemSubtitle(item);
     const album = kind === "album" ? itemTitle(item) : "";
     const artwork = itemArtwork(item);
+    const artistMbid = text(item, ["artistMbid"]) || artistMbidHint || "";
+    const artistImage = text(item, ["artistImageUrl", "artistImage", "imageUrl", "image"]);
     return values.map(record).map((track) => {
         const enriched: Item = { ...track };
         if (artist && !text(track, ["artistName", "artist"])) enriched.artistName = artist;
         if (album && !text(track, ["albumName", "album"])) enriched.albumName = album;
         if (artwork && !text(track, ["artworkUrl", "largeArtworkUrl", "coverUrl", "coverArtUrl", "imageUrl", "image"])) {
             enriched.artworkUrl = artwork;
+        }
+        // Preview endpoints return bare tracks, so carry the card's artist
+        // identity/portrait through to the player and rich status.
+        if (artistMbid && !text(track, ["artistMbid"])) enriched.artistMbid = artistMbid;
+        if (artistImage && !text(track, ["artistImageUrl", "artistImage", "artistArtworkUrl"])) {
+            enriched.artistImageUrl = artistImage;
         }
         return enriched;
     });
@@ -552,12 +560,12 @@ async function previewTracksFor(client: AurralClient, item: Item, kind: string, 
         if (kind === "artist") {
             const mbid = ids.artistMbid || id;
             const payload = await client.artistPreviews(mbid, itemTitle(item));
-            return playableTracks(client, withCardContext(item, kind, items(payload, ["tracks", "items"])));
+            return playableTracks(client, withCardContext(item, kind, items(payload, ["tracks", "items"]), ids.artistMbid));
         }
         if (kind === "album") {
             const mbid = ids.albumMbid || id;
             const payload = await client.releaseGroupTracks(mbid);
-            return playableTracks(client, withCardContext(item, kind, items(payload, ["tracks", "items"])));
+            return playableTracks(client, withCardContext(item, kind, items(payload, ["tracks", "items"]), ids.artistMbid));
         }
     } catch {
         // No previews for this id; radio is the last resort.

@@ -121,6 +121,10 @@ export function normaliseTrack(client: AurralClient | null, value: unknown): Aur
     const libraryStream = candidates.length > 0;
     if (preview) add(preview);
 
+    const artistData = record(data.artist);
+    const artistImages = Array.isArray(artistData.images)
+        ? artistData.images.map(record)
+        : [];
     const duration = durationMs(data, ["durationMs", "duration_ms", "duration", "lengthMs", "length"]);
     return {
         ...data,
@@ -142,14 +146,20 @@ export function normaliseTrack(client: AurralClient | null, value: unknown): Aur
         streamPath: candidates[0] ?? null,
         streamPaths: candidates,
         isPreview: data.isPreview === true || (!libraryStream && !!preview),
-        artistImageUrl: artUrl(client, data, [
-            "artistImageUrl",
-            "artistArtworkUrl",
-            "artistAvatarUrl",
-            "artistImage",
-        ]),
-        // Fall back to the album art when the track has no separate artist image.
-        // It is not a portrait, but it is better than an empty activity card.
+        artistMbid:
+            text(data, ["artistMbid"]) || text(artistData, ["mbid", "artistMbid"]) || null,
+        artistImageUrl:
+            artUrl(client, data, [
+                "artistImageUrl",
+                "artistArtworkUrl",
+                "artistAvatarUrl",
+                "artistImage",
+                "artistPictureUrl",
+            ]) ||
+            artUrl(client, artistData, ["imageUrl", "image", "avatarUrl", "artworkUrl"]) ||
+            artUrl(client, artistImages[0] ?? null, ["image", "url"]) ||
+            null,
+        /** Deezer/MusicBrainz sample audio, not an image. */
         previewUrl: artUrl(client, data, ["previewUrl", "preview"]) || null,
     };
 }

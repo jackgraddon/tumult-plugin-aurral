@@ -36,6 +36,8 @@ export interface AurralTrack {
     artistName: string;
     albumName?: string | null;
     artworkUrl?: string | null;
+    artistMbid?: string | null;
+    artistImageUrl?: string | null;
     durationMs?: number | null;
     streamPath?: string | null;
     /** Every plausible stream path for this track, in preference order. */
@@ -161,6 +163,11 @@ export class AurralClient {
         const url = new URL(this.serverUrl + this.apiPath(path));
         if (this.token) url.searchParams.set("token", this.token);
         return url.toString();
+    }
+
+    /** Artist portrait used as the secondary image in rich presence. */
+    artistImage(mbid: string): string {
+        return this.authenticatedAsset(`/api/artists/${encodeURIComponent(mbid)}/image`);
     }
 
     private async request<T>(
