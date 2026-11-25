@@ -81,31 +81,34 @@ const STREAM_KEYS = ["streamPath", "streamUrl", "url", "path", "audioUrl"];
 
 export function normaliseTrack(client: AurralClient | null, value: unknown): AurralTrack {
     const data = withMetadata(value);
-    const allFiles = list(data, ["files"]);
-    // A file can be flagged available but still be missing on disk. Keep every
-    // candidate so the player can fall back instead of failing the whole track.
-    const files = [
-        ...allFiles.filter((entry) => record(entry).available !== false),
-        ...allFiles.filter((entry) => record(entry).available === false),
-    ];
-    // Library track rows carry a file id and an album id rather than a stream
-    // URL. Aurral serves those as /library/stream/<albumId>/<fileId>; derive one
-    // per file so library tracks are playable everywhere normaliseTrack is used.
-    const albums = list(data, ["albums"]);
-    const albumId = text(data, ["albumId"]) || (albums.length ? text(albums[0], ["albumId", "id"]) : "");
+    const files = list(data, ["files"]);
 
     const candidates: string[] = [];
     const add = (path: string): void => {
         if (path && !candidates.includes(path)) candidates.push(path);
     };
     add(text(data, STREAM_KEYS));
-    for (const file of files) {
-        add(text(file, STREAM_KEYS));
-        const fileAlbumId = text(file, ["albumId"]) || albumId;
-        const fileId = text(file, ["id", "fileId"]);
-        if (fileAlbumId && fileId) {
-            add(`/library/stream/${encodeURIComponent(fileAlbumId)}/${encodeURIComponent(fileId)}`);
-        }
+    for (const file of files) add(text(file, STREAM_KEYS));
+
+    // Library track rows have no streamPath, and Aurral's stream routes take a
+    // TRACK id, not the `files[].id` values. A track can also belong to several
+    // albums where only one has the file, so try every album context.
+    const albumIds: string[] = [];
+    const addAlbum = (value: string): void => {
+        if (value && !albumIds.includes(value)) albumIds.push(value);
+    };
+    addAlbum(text(data, ["albumId", "libraryAlbumId"]));
+    for (const album of list(data, ["albums"])) addAlbum(text(album, ["albumId", "id"]));
+    for (const file of files) addAlbum(text(file, ["albumId"]));
+
+    const numericId = text(data, ["id"]);
+    const trackId =
+        text(data, ["trackId", "libraryTrackId"]) ||
+        (/^\d+$/.test(numericId) ? numericId : "");
+    for (const albumId of albumIds) {
+        if (!trackId) break;
+        add(`/library/file-stream/${encodeURIComponent(albumId)}/${encodeURIComponent(trackId)}`);
+        add(`/library/stream/${encodeURIComponent(albumId)}/${encodeURIComponent(trackId)}`);
     }
 
     const duration = durationMs(data, ["durationMs", "duration", "lengthMs", "length"]);

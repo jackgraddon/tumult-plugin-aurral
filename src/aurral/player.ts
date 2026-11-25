@@ -193,7 +193,9 @@ async function loadCurrent(autoplay: boolean): Promise<void> {
                     : lastError
                       ? String(lastError)
                       : "unknown error";
-            throw new Error(paths.length > 1 ? `${detail} (tried ${paths.length} files)` : detail);
+            throw new Error(
+                paths.length > 1 ? `${detail} (tried ${paths.length} stream paths)` : detail,
+            );
         }
 
         // Remember the path that worked so queue saves and now-playing use it.

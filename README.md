@@ -70,9 +70,9 @@ access-control-allow-origin: https://tumult.example
 Aurral's stream routes are not CORS-public and send
 `Cross-Origin-Resource-Policy: same-origin`. The plugin fetches audio with the
 session token and plays it from a blob URL, which works once CORS is configured
-as above. If a library file is stale, the player tries the track's other file
-candidates and shows Aurral's actual error (for example `Track file missing`)
-instead of a bare `stream_failed`.
+as above. Tracks that appear on several albums are tried in each album context,
+and Aurral's actual error (for example `Track file missing`) is shown instead of
+a bare `stream_failed`.
 
 Do **not** put an Aurral API key in plugin settings: it is an administrator
 credential. This plugin signs in as the user and uses only a user session token,
@@ -89,7 +89,7 @@ pnpm typecheck      # checks against the vendored plugin types
 Tag a release matching the manifest version to publish it:
 
 ```sh
-git tag v0.0.11 && git push origin v0.0.11
+git tag v0.0.12 && git push origin v0.0.12
 ```
 
 The workflow builds, hashes and attaches `plugin.js` and `tumult.plugin.json`.
