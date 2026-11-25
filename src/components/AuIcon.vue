@@ -11,22 +11,33 @@
 import { ref, watchEffect } from "vue";
 import {
     mdiAccountGroupOutline,
+    mdiArrowDown,
     mdiArrowLeft,
     mdiArrowRight,
+    mdiArrowUp,
     mdiBookshelf,
     mdiChartTimelineVariant,
+    mdiClose,
     mdiCompassOutline,
     mdiDotsHorizontal,
+    mdiHeart,
+    mdiHeartOutline,
+    mdiLinkVariant,
     mdiMagnify,
+    mdiMenu,
+    mdiMinus,
     mdiMusic,
     mdiOpenInNew,
     mdiPause,
     mdiPlay,
     mdiPlaylistMusic,
+    mdiPlaylistPlus,
+    mdiPlus,
     mdiRefresh,
     mdiShareVariant,
     mdiSkipNext,
     mdiSkipPrevious,
+    mdiStop,
 } from "@mdi/js";
 
 import { hostIcons } from "../icons";
@@ -49,8 +60,19 @@ const NAMES: Record<string, string> = {
     previous: "skip-previous",
     play: "play",
     pause: "pause",
+    stop: "stop",
     next: "skip-next",
     external: "open-in-new",
+    menu: "menu",
+    close: "close",
+    plus: "plus",
+    minus: "minus",
+    up: "arrow-up",
+    down: "arrow-down",
+    heart: "heart",
+    "heart-outline": "heart-outline",
+    link: "link-variant",
+    "queue-add": "playlist-plus",
 };
 
 /** Bundled fallback, used until the host resolves (or on hosts without it). */
@@ -71,8 +93,19 @@ const PATHS: Record<string, string> = {
     previous: mdiSkipPrevious,
     play: mdiPlay,
     pause: mdiPause,
+    stop: mdiStop,
     next: mdiSkipNext,
     external: mdiOpenInNew,
+    menu: mdiMenu,
+    close: mdiClose,
+    plus: mdiPlus,
+    minus: mdiMinus,
+    up: mdiArrowUp,
+    down: mdiArrowDown,
+    heart: mdiHeart,
+    "heart-outline": mdiHeartOutline,
+    link: mdiLinkVariant,
+    "queue-add": mdiPlaylistPlus,
 };
 
 const props = defineProps<{ name: string }>();

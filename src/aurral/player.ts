@@ -8,10 +8,11 @@
  * the resulting blob URL plays normally (including seeking inside the loaded
  * file).
  */
-import { computed, reactive, type ComputedRef } from "vue";
+import { computed, reactive, ref, type ComputedRef } from "vue";
 
 import { AurralClient, type AurralTrack, type PlayQueue } from "./client";
 import { currentClient } from "./session";
+import { resetFavorites } from "./library";
 import { normaliseTrack, record, text } from "./model";
 import { publishListening, clearListening, scheduleClearListening } from "./status";
 
@@ -43,6 +44,8 @@ export const state = reactive<PlayerState>({
 export const currentTrack: ComputedRef<AurralTrack | null> = computed(
     () => state.tracks[state.index] ?? null,
 );
+/** Open state for the queue drawer toggled from the player footer. */
+export const queueOpen = ref(false);
 
 let audio: HTMLAudioElement | null = null;
 let objectUrl: string | null = null;
@@ -53,7 +56,8 @@ let playEventSent = false;
 
 function publishServerNowPlaying(track: AurralTrack | null): void {
     const client = currentClient();
-    if (!client || !track?.streamPath) return;
+    // Discover previews are borrowed streams, not plays of library files.
+    if (!client || !track?.streamPath || track.isPreview === true) return;
     const album = record(track.album);
     const artist = record(track.artist);
     const id = track.id ?? track.trackId;
@@ -75,7 +79,7 @@ function publishServerNowPlaying(track: AurralTrack | null): void {
 
 function publishCompletedPlay(track: AurralTrack | null): void {
     const client = currentClient();
-    if (!client || !track?.streamPath || playEventSent) return;
+    if (!client || !track?.streamPath || track.isPreview === true || playEventSent) return;
     const duration = track.durationMs ?? 0;
     if (duration <= 30_000 || state.positionMs < Math.min(duration / 2, 240_000)) return;
     playEventSent = true;
@@ -306,6 +310,83 @@ export function setVolume(value: number): void {
     if (audio) audio.volume = state.volume;
 }
 
+/** Stop without discarding the queue; Play resumes it from the start. */
+export function stop(): void {
+    ++loadToken;
+    stopAudio();
+    state.positionMs = 0;
+    state.error = null;
+    playEventSent = false;
+    void clearListening();
+    void saveQueue();
+}
+
+/** Append tracks to the queue. An idle player starts the first addition. */
+export function enqueueTracks(tracks: AurralTrack[]): number {
+    const usable = tracks.filter((track) => typeof track.streamPath === "string" && !!track.streamPath);
+    if (!usable.length) return 0;
+    const idle = state.tracks.length === 0;
+    state.tracks.push(...usable);
+    if (idle) {
+        state.index = 0;
+        state.positionMs = 0;
+        state.durationMs = currentTrack.value?.durationMs ?? 0;
+        void playAt(0);
+    } else {
+        void saveQueue();
+    }
+    return usable.length;
+}
+
+/** Remove one queue row, keeping playback on the same track where possible. */
+export function removeQueueItem(index: number): void {
+    if (index < 0 || index >= state.tracks.length) return;
+    const wasPlaying = state.playing;
+    const removingCurrent = index === state.index;
+    if (removingCurrent) stopAudio();
+    state.tracks.splice(index, 1);
+    if (!state.tracks.length) {
+        clearQueue();
+        return;
+    }
+    if (removingCurrent) {
+        state.index = Math.min(index, state.tracks.length - 1);
+        state.positionMs = 0;
+        state.durationMs = currentTrack.value?.durationMs ?? 0;
+        void clearListening();
+        if (wasPlaying) void playAt(state.index);
+    } else if (index < state.index) {
+        state.index -= 1;
+    }
+    void saveQueue();
+}
+
+/** Swap a queue row with its neighbour; the playing track keeps its audio. */
+export function moveQueueItem(index: number, offset: number): void {
+    const target = index + offset;
+    if (target < 0 || target >= state.tracks.length) return;
+    const playing = state.index;
+    const track = state.tracks[index];
+    if (!track) return;
+    state.tracks.splice(index, 1);
+    state.tracks.splice(target, 0, track);
+    if (playing === index) state.index = target;
+    else if (playing === target) state.index = index;
+    void saveQueue();
+}
+
+export function clearQueue(): void {
+    ++loadToken;
+    stopAudio();
+    state.tracks = [];
+    state.index = 0;
+    state.positionMs = 0;
+    state.durationMs = 0;
+    state.error = null;
+    playEventSent = false;
+    void clearListening();
+}
+
 /** Queue tracks that have a stream path, in display order. */
 export function setQueue(tracks: AurralTrack[], startIndex = 0): void {
     ++loadToken;
@@ -319,7 +400,8 @@ export function setQueue(tracks: AurralTrack[], startIndex = 0): void {
 
 export async function saveQueue(): Promise<void> {
     const client = currentClient();
-    if (!client || !state.tracks.length) return;
+    // Preview queues are local borrowings; don't persist them as listening state.
+    if (!client || !state.tracks.length || state.tracks.some((track) => track.isPreview === true)) return;
     const now = Date.now();
     if (now - lastSave < SAVE_THROTTLE_MS) return;
     lastSave = now;
@@ -349,6 +431,8 @@ export function disposePlayer(): void {
     state.playing = false;
     state.loading = false;
     state.error = null;
+    queueOpen.value = false;
+    resetFavorites();
     void clearListening();
 }
 

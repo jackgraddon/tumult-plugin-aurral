@@ -10,7 +10,7 @@ import { reactive } from "vue";
 
 import { currentClient, session } from "./session";
 import { errorText, list, normaliseTrack, record, text, withMetadata } from "./model";
-import { next, playAt, setQueue } from "./player";
+import { enqueueTracks, next, playAt, setQueue } from "./player";
 import type { AurralTrack, AurralClient } from "./client";
 
 export type Item = Record<string, unknown>;
@@ -73,6 +73,8 @@ export interface UiState {
     detail: DetailState | null;
     /** Detail pages left on the breadcrumb, so Back pops one level at a time. */
     detailStack: DetailState[];
+    /** Mirrored by CSS so the pane's header hamburger can collapse the sidebar. */
+    sidebarOpen: boolean;
     notice: string | null;
 }
 
@@ -100,10 +102,11 @@ export const ui = reactive<UiState>({
     shares: [],
     detail: null,
     detailStack: [],
+    sidebarOpen: true,
     notice: null,
 });
 
-const DEFAULT_KEYS = ["items", "tracks", "albums", "artists", "genres", "results", "entries", "recommendations"];
+const DEFAULT_KEYS = ["items", "tracks", "songs", "albums", "artists", "genres", "results", "entries", "recommendations"];
 
 /** Pull a usable array out of the several shapes Aurral uses for collections. */
 function items(value: unknown, keys: string[] = DEFAULT_KEYS): Item[] {
@@ -202,22 +205,30 @@ export async function refresh(): Promise<void> {
 }
 
 async function loadDiscover(client: AurralClient): Promise<void> {
-    const [discover, trending, playlists, recent, releases] = await Promise.allSettled([
+    const [discover, trending, playlists, mixes, recent, releases] = await Promise.allSettled([
         client.discover(),
         client.trending(),
         client.discoverPlaylists(),
+        client.discoverMixes(),
         client.library("artists", { pageSize: 24, sort: "recentlyAdded", direction: "desc" }),
         client.recentReleases(),
     ]);
     const discoverData = record(discover.status === "fulfilled" ? discover.value : null);
     const trendingData = record(trending.status === "fulfilled" ? trending.value : null);
     const playlistData = record(playlists.status === "fulfilled" ? playlists.value : null);
+    const mixData = record(mixes.status === "fulfilled" ? mixes.value : null);
+    // Category objects are not cards: their `playlists` arrays are.
+    const categoryPlaylists = items(playlistData.categories, ["categories", "items"])
+        .flatMap((category) => items(category, ["playlists", "items"]));
 
     ui.shelves = [
-        shelf("made-for-you", "Made for you", null, discoverData.recommendations, discoverData.basedOn, discoverData.globalTop, discoverData.top),
+        shelf("made-for-you", "Made for you", null, discoverData.recommendations, discoverData.globalTop, discoverData.top),
+        shelf("based-on", "Based on your library", "artist", discoverData.basedOn),
         shelf("recently-added", "Recently added", "album", recent.status === "fulfilled" ? recent.value : null),
-        shelf("trending", "Trending now", null, trendingData.albums, trendingData.tracks, trendingData.artists, trendingData),
-        shelf("playlists", "Playlists", "playlist", playlistData.playlists, playlistData.forYou, playlistData.categories, playlistData),
+        shelf("trending-songs", "Trending songs", "track", trendingData.songs),
+        shelf("trending-artists", "Trending artists", "artist", trendingData.artists),
+        shelf("trending-albums", "Trending albums", "album", trendingData.albums),
+        shelf("playlists", "Playlists", "playlist", playlistData.forYou, categoryPlaylists, mixData.discovery, mixData.mixes),
         shelf("new-releases", "Recent & upcoming releases", "album", releases.status === "fulfilled" ? releases.value : null),
     ].filter((value): value is Shelf => value !== null);
 }
@@ -302,23 +313,23 @@ async function loadDetail(client: AurralClient): Promise<void> {
     detail.loading = true;
     try {
         if (detail.kind === "playlist") {
-            const payload = await client.playlistJobs(detail.id);
-            detail.tracks = playlistJobTracks(client, payload);
+            detail.tracks = await previewTracksFor(client, detail.item, detail.kind, detail.id);
         } else if (detail.kind === "album") {
-            const payload = await client.library("tracks", {
-                albumId: detail.id,
-                pageSize: 100,
-                compact: false,
-                page: 1,
-            });
-            detail.tracks = tagged(payload, ["tracks", "items"], "track");
+            const tracks = await libraryTracksFor(client, detail.item, detail.kind, detail.id);
+            detail.tracks = tracks.length
+                ? tracks
+                : await previewTracksFor(client, detail.item, detail.kind, detail.id);
         } else {
+            // External artists have no library albums. Don't let that lookup
+            // abort the preview fallback below.
             const [albums, tracks] = await Promise.all([
-                client.library("albums", { artistId: detail.id, pageSize: 50 }),
-                client.library("tracks", { artistId: detail.id, pageSize: 100, compact: false }),
+                client.library("albums", { artistId: detail.id, pageSize: 50 }).catch(() => null),
+                libraryTracksFor(client, detail.item, detail.kind, detail.id),
             ]);
-            detail.albums = tagged(albums, ["albums", "items"], "album");
-            detail.tracks = tagged(tracks, ["tracks", "items"], "track");
+            detail.albums = albums ? tagged(albums, ["albums", "items"], "album") : [];
+            detail.tracks = tracks.length
+                ? tracks
+                : await previewTracksFor(client, detail.item, detail.kind, detail.id);
         }
     } catch (cause) {
         ui.error = errorText(cause);
@@ -341,6 +352,22 @@ export function setActivityView(view: "queue" | "history"): void {
     ui.activity.view = view;
     ui.activity.page = 1;
     void refresh();
+}
+
+export function toggleSidebar(): void {
+    ui.sidebarOpen = !ui.sidebarOpen;
+}
+
+/** Append a card or track row to the player queue without interrupting it. */
+export function enqueueItem(item: Item): number {
+    const client = currentClient();
+    if (!client) return 0;
+    const direct = normaliseTrack(client, item);
+    if (direct.streamPath) return enqueueTracks([direct]);
+    const tracks = items(item, ["tracks", "songs", "items"])
+        .map((entry) => normaliseTrack(client, entry))
+        .filter((track) => !!track.streamPath);
+    return enqueueTracks(tracks);
 }
 
 /** Open a library/search item's detail page. */
@@ -424,6 +451,133 @@ function playlistJobTracks(client: AurralClient, jobs: unknown[]): AurralTrack[]
         .filter((track) => typeof track.streamPath === "string" && !!track.streamPath);
 }
 
+function playableTracks(client: AurralClient, values: unknown[]): AurralTrack[] {
+    return values
+        .map((value) => normaliseTrack(client, value))
+        .filter((track) => !!track.streamPath);
+}
+
+/**
+ * Preview endpoints return bare track rows. Fill in the artist/album/artwork
+ * from the card the user clicked so the player and rich status stay useful.
+ */
+function withCardContext(item: Item, kind: string, values: unknown[]): Item[] {
+    const artist = kind === "artist" ? itemTitle(item) : itemSubtitle(item);
+    const album = kind === "album" ? itemTitle(item) : "";
+    const artwork = itemArtwork(item);
+    return values.map(record).map((track) => {
+        const enriched: Item = { ...track };
+        if (artist && !text(track, ["artistName", "artist"])) enriched.artistName = artist;
+        if (album && !text(track, ["albumName", "album"])) enriched.albumName = album;
+        if (artwork && !text(track, ["artworkUrl", "largeArtworkUrl", "coverUrl", "coverArtUrl", "imageUrl", "image"])) {
+            enriched.artworkUrl = artwork;
+        }
+        return enriched;
+    });
+}
+
+async function libraryTracksFor(client: AurralClient, _item: Item, kind: string, id: string): Promise<AurralTrack[]> {
+    try {
+        const filter = kind === "album" ? { albumId: id }
+            : kind === "artist" ? { artistId: id }
+                : { trackId: id };
+        const payload = await client.library("tracks", {
+            ...filter,
+            pageSize: 100,
+            compact: false,
+            page: 1,
+        });
+        return playableTracks(client, items(payload, ["tracks", "items"]));
+    } catch {
+        // External Discover ids are not library ids; previews are next.
+        return [];
+    }
+}
+
+const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Trending cards carry Deezer/Apple ids; preview endpoints need MusicBrainz
+ * ids. Resolve by name (and the vendor id when present) exactly like the
+ * official client's `/go/album` route does.
+ */
+async function previewIdsFor(
+    client: AurralClient,
+    item: Item,
+    kind: string,
+    id: string,
+): Promise<{ artistMbid: string | null; albumMbid: string | null }> {
+    if (MBID.test(id)) {
+        return kind === "album"
+            ? { artistMbid: null, albumMbid: id }
+            : { artistMbid: id, albumMbid: null };
+    }
+    try {
+        const links = await client.discoverLinks({
+            artist: kind === "artist" ? itemTitle(item) : itemSubtitle(item),
+            album: kind === "album" ? itemTitle(item) : "",
+            albumId: text(item, ["key", "deezerAlbumId", "externalId"]),
+            track: kind === "track" ? itemTitle(item) : "",
+        });
+        return {
+            artistMbid: text(links, ["artistMbid"]) || null,
+            albumMbid: text(links, ["albumMbid"]) || null,
+        };
+    } catch {
+        return { artistMbid: null, albumMbid: null };
+    }
+}
+
+/** Resolve the short preview streams used by Discover cards and detail pages. */
+async function previewTracksFor(client: AurralClient, item: Item, kind: string, id: string): Promise<AurralTrack[]> {
+    if (kind === "playlist") {
+        const provider = text(item, ["provider", "source"]);
+        if (provider) {
+            try {
+                const payload = await client.discoverPlaylist(provider, id);
+                const tracks = playableTracks(client, items(payload, ["tracks", "songs", "items"]));
+                if (tracks.length) return tracks;
+            } catch {
+                // Try the library jobs below; this may be a local playlist.
+            }
+        }
+        try {
+            return playlistJobTracks(client, await client.playlistJobs(id));
+        } catch {
+            return [];
+        }
+    }
+    try {
+        const ids = await previewIdsFor(client, item, kind, id);
+        if (kind === "artist") {
+            const mbid = ids.artistMbid || id;
+            const payload = await client.artistPreviews(mbid, itemTitle(item));
+            return playableTracks(client, withCardContext(item, kind, items(payload, ["tracks", "items"])));
+        }
+        if (kind === "album") {
+            const mbid = ids.albumMbid || id;
+            const payload = await client.releaseGroupTracks(mbid);
+            return playableTracks(client, withCardContext(item, kind, items(payload, ["tracks", "items"])));
+        }
+    } catch {
+        // No previews for this id; radio is the last resort.
+    }
+    return [];
+}
+
+async function radioTracksFor(client: AurralClient, kind: string, id: string): Promise<AurralTrack[]> {
+    try {
+        const payload = kind === "album"
+            ? await client.radio({ albumIds: [id], limit: 100 })
+            : kind === "artist"
+                ? await client.radio({ artists: [{ id }], limit: 100 })
+                : await client.radio({ trackIds: [id], limit: 100 });
+        return playableTracks(client, items(payload, ["tracks"]));
+    } catch {
+        return [];
+    }
+}
+
 /** Play one card: direct tracks, embedded tracks, or a resolved collection. */
 export async function playItem(item: Item, kindHint?: string): Promise<void> {
     const client = currentClient();
@@ -445,52 +599,15 @@ export async function playItem(item: Item, kindHint?: string): Promise<void> {
         return;
     }
     ui.notice = null;
-    try {
-        if (kind === "playlist") {
-            const jobs = await client.playlistJobs(id);
-            const tracks = playlistJobTracks(client, jobs);
-            if (tracks.length) {
-                setQueue(tracks, 0);
-                void playAt(0);
-                return;
-            }
-        } else {
-            const filter = kind === "album" ? { albumId: id }
-                : kind === "artist" ? { artistId: id }
-                    : { trackId: id };
-            const payload = await client.library("tracks", {
-                ...filter,
-                pageSize: 100,
-                compact: false,
-                page: 1,
-            });
-            const tracks = items(payload, ["tracks", "items"])
-                .map((track) => normaliseTrack(client, track))
-                .filter((track) => track.streamPath);
-            if (tracks.length) {
-                setQueue(tracks, 0);
-                void playAt(0);
-                return;
-            }
-            // Radio is a last resort; it returns related tracks with playable paths.
-            const radioPayload = kind === "album"
-                ? await client.radio({ albumIds: [String(id)], limit: 100 })
-                : kind === "artist"
-                    ? await client.radio({ artists: [{ id: String(id) }], limit: 100 })
-                    : await client.radio({ trackIds: [String(id)], limit: 100 });
-            const related = items(radioPayload, ["tracks"])
-                .map((track) => normaliseTrack(client, track))
-                .filter((track) => track.streamPath);
-            if (related.length) {
-                setQueue(related, 0);
-                void playAt(0);
-                return;
-            }
-        }
-    } catch (cause) {
-        ui.error = errorText(cause);
+    let tracks = await libraryTracksFor(client, item, kind, id);
+    if (!tracks.length) tracks = await previewTracksFor(client, item, kind, id);
+    if (!tracks.length && kind !== "playlist") tracks = await radioTracksFor(client, kind, id);
+    if (!tracks.length) {
+        ui.notice = "That item does not include playable tracks.";
+        return;
     }
-    ui.notice = "That item does not include playable tracks.";
+    setQueue(tracks, 0);
+    void playAt(0);
 }
 
 /** Play the tracks currently shown in an open detail page. */
@@ -505,7 +622,7 @@ export async function playDetail(): Promise<void> {
 }
 
 export function itemId(item: Item): string {
-    return text(item, ["id", "trackId", "albumId", "artistId", "playlistId", "jobId", "externalId"]);
+    return text(item, ["id", "mbid", "key", "trackId", "albumId", "artistId", "playlistId", "jobId", "externalId"]);
 }
 
 export function itemKind(item: Item): string {
@@ -535,6 +652,7 @@ export function itemArtwork(item: Item): string | null {
     const data = withMetadata(item);
     const value = text(data, [
         "artworkUrl",
+        "largeArtworkUrl",
         "coverArtUrl",
         "coverUrl",
         "albumArtUrl",
@@ -551,7 +669,7 @@ export function itemArtwork(item: Item): string | null {
 
 export function itemDuration(item: Item): string {
     const data = withMetadata(item);
-    const value = text(data, ["durationMs", "duration", "lengthMs", "length"]);
+    const value = text(data, ["durationMs", "duration_ms", "duration", "lengthMs", "length"]);
     if (!value) return "";
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return value;

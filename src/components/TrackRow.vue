@@ -2,19 +2,19 @@
 import { computed, onBeforeUnmount, ref } from "vue";
 
 import { currentClient } from "../aurral/session";
-import { artUrl, list, record, text, withMetadata } from "../aurral/model";
+import { artUrl } from "../aurral/model";
 import { currentTrack, state } from "../aurral/player";
 import {
+    enqueueItem,
     itemArtwork,
     itemDuration,
     itemStatus,
     itemSubtitle,
     itemTitle,
-    openDetail,
     ui,
     type Item,
 } from "../aurral/store";
-import { squiglyUrl } from "../aurral/status";
+import { shareToAurral, shareToSquigly } from "../aurral/share";
 import AuIcon from "./AuIcon.vue";
 
 const props = withDefaults(defineProps<{
@@ -36,6 +36,7 @@ const title = computed(() => itemTitle(props.item));
 const subtitle = computed(() => itemSubtitle(props.item));
 const duration = computed(() => itemDuration(props.item));
 const status = computed(() => itemStatus(props.item));
+const isPreview = computed(() => props.item.isPreview === true);
 const artwork = computed(() => artUrl(currentClient(), itemArtwork(props.item), ART_KEYS));
 const isCurrent = computed(() => {
     const current = currentTrack.value;
@@ -43,35 +44,6 @@ const isCurrent = computed(() => {
     const id = props.item.id ?? props.item.trackId;
     return id !== undefined && String(id) === String(current.id ?? current.trackId);
 });
-
-/** Album/artist references carried by a track row, when the server exposes ids. */
-const albumRef = computed<Item | null>(() => {
-    const data = withMetadata(props.item);
-    const albums = list(data, ["albums"]);
-    const album = record(data.album);
-    const id =
-        text(data, ["albumId"]) ||
-        text(album, ["id", "albumId"]) ||
-        text(albums[0], ["albumId", "id"]);
-    if (!id) return null;
-    const name =
-        text(data, ["albumName", "albumTitle"]) ||
-        text(album, ["title", "name"]) ||
-        text(data, ["album"]);
-    return { ...data, _kind: "album", id, title: name };
-});
-
-const artistRef = computed<Item | null>(() => {
-    const data = withMetadata(props.item);
-    const artist = record(data.artist);
-    const id = text(data, ["artistId"]) || text(artist, ["id", "artistId"]);
-    if (!id) return null;
-    const name =
-        text(data, ["artistName", "albumArtist"]) || text(artist, ["name", "title"]);
-    return { ...data, _kind: "artist", id, title: name };
-});
-
-const shareLink = computed(() => squiglyUrl({ title: title.value, artistName: subtitle.value }));
 
 const menuOpen = ref(false);
 const menuButton = ref<HTMLElement | null>(null);
@@ -89,7 +61,7 @@ function toggleMenu(event: MouseEvent): void {
     const rect = button.getBoundingClientRect();
     // Rough menu height: flip above the button near the viewport bottom so the
     // popup is not clipped by the pane's scroll container.
-    const estimatedHeight = 190;
+    const estimatedHeight = 230;
     const placeAbove = rect.bottom + estimatedHeight > window.innerHeight - 8;
     menuStyle.value = {
         top: `${placeAbove ? rect.top - 4 : rect.bottom + 4}px`,
@@ -126,34 +98,20 @@ function menuPlay(): void {
     emit("play", props.item);
 }
 
-function menuOpenAlbum(): void {
-    const target = albumRef.value;
+function menuQueue(): void {
     closeMenu();
-    if (target) openDetail(target, "album");
+    const added = enqueueItem(props.item);
+    ui.notice = added ? `Added ${added} track${added === 1 ? "" : "s"} to the queue.` : "No playable stream to queue.";
 }
 
-function menuOpenArtist(): void {
-    const target = artistRef.value;
+function menuShareSquigly(): void {
     closeMenu();
-    if (target) openDetail(target, "artist");
+    shareToSquigly(props.item);
 }
 
-function menuShare(): void {
-    const link = shareLink.value;
+async function menuShareAurral(): Promise<void> {
     closeMenu();
-    if (link) window.open(link, "_blank", "noopener,noreferrer");
-}
-
-async function menuCopy(): Promise<void> {
-    const link = shareLink.value;
-    closeMenu();
-    if (!link) return;
-    try {
-        await navigator.clipboard.writeText(link);
-        ui.notice = "Share link copied.";
-    } catch {
-        ui.notice = "Could not copy the share link.";
-    }
+    await shareToAurral(props.item);
 }
 </script>
 
@@ -178,6 +136,7 @@ async function menuCopy(): Promise<void> {
             </div>
         </div>
         <div class="au-track-meta">
+            <span v-if="isPreview" class="au-badge">Preview</span>
             <span v-if="status" class="au-badge">{{ status }}</span>
             <span class="au-track-time">{{ duration }}</span>
             <button class="au-button au-button--icon" type="button" :aria-label="`Play ${title}`" @click.stop="emit('play', item)"><AuIcon name="play" /></button>
@@ -196,17 +155,15 @@ async function menuCopy(): Promise<void> {
                 <button class="au-menu-item" type="button" role="menuitem" @click="menuPlay">
                     <AuIcon name="play" /> Play
                 </button>
-                <button v-if="albumRef" class="au-menu-item" type="button" role="menuitem" @click="menuOpenAlbum">
-                    <AuIcon name="library" /> Open album
+                <button class="au-menu-item" type="button" role="menuitem" @click="menuQueue">
+                    <AuIcon name="queue-add" /> Add to queue
                 </button>
-                <button v-if="artistRef" class="au-menu-item" type="button" role="menuitem" @click="menuOpenArtist">
-                    <AuIcon name="people" /> Open artist
+                <div class="au-menu-label" role="presentation">Share with…</div>
+                <button class="au-menu-item" type="button" role="menuitem" @click="menuShareSquigly">
+                    <AuIcon name="share" /> Squigly
                 </button>
-                <button v-if="shareLink" class="au-menu-item" type="button" role="menuitem" @click="menuShare">
-                    <AuIcon name="share" /> Share on Squigly
-                </button>
-                <button v-if="shareLink" class="au-menu-item" type="button" role="menuitem" @click="menuCopy">
-                    <AuIcon name="dots" /> Copy link
+                <button class="au-menu-item" type="button" role="menuitem" @click="menuShareAurral">
+                    <AuIcon name="link" /> Aurral
                 </button>
             </div>
         </Teleport>

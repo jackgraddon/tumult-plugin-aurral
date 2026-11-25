@@ -78,9 +78,15 @@ export function artUrl(client: AurralClient | null, value: unknown, keys: string
 }
 
 const STREAM_KEYS = ["streamPath", "streamUrl", "url", "path", "audioUrl"];
+/** Deezer/Discover previews. Kept last so a real library stream always wins. */
+const PREVIEW_KEYS = ["preview_url"];
 
 export function normaliseTrack(client: AurralClient | null, value: unknown): AurralTrack {
-    const data = withMetadata(value);
+    const raw = withMetadata(value);
+    // Discovery mixes carry an `owned` library track alongside the catalog
+    // row. Prefer the catalog metadata but keep its real stream/id fields.
+    const owned = record(raw.owned);
+    const data = Object.keys(owned).length ? { ...owned, ...raw } : raw;
     const files = list(data, ["files"]);
 
     const candidates: string[] = [];
@@ -111,14 +117,19 @@ export function normaliseTrack(client: AurralClient | null, value: unknown): Aur
         add(`/library/stream/${encodeURIComponent(albumId)}/${encodeURIComponent(trackId)}`);
     }
 
-    const duration = durationMs(data, ["durationMs", "duration", "lengthMs", "length"]);
+    const preview = text(data, PREVIEW_KEYS);
+    const libraryStream = candidates.length > 0;
+    if (preview) add(preview);
+
+    const duration = durationMs(data, ["durationMs", "duration_ms", "duration", "lengthMs", "length"]);
     return {
         ...data,
-        title: text(data, ["title", "name", "trackTitle"], "Untitled"),
+        title: text(data, ["title", "name", "trackName", "trackTitle"], "Untitled"),
         artistName: text(data, ["artistName", "artist", "artistNameForDisplay", "albumArtist"]),
         albumName: text(data, ["albumName", "album", "albumTitle"]) || null,
         artworkUrl: artUrl(client, data, [
             "artworkUrl",
+            "largeArtworkUrl",
             "coverArtUrl",
             "coverUrl",
             "albumArtUrl",
@@ -130,6 +141,7 @@ export function normaliseTrack(client: AurralClient | null, value: unknown): Aur
         durationMs: duration || null,
         streamPath: candidates[0] ?? null,
         streamPaths: candidates,
+        isPreview: data.isPreview === true || (!libraryStream && !!preview),
         artistImageUrl: artUrl(client, data, [
             "artistImageUrl",
             "artistArtworkUrl",

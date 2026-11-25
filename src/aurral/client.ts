@@ -40,6 +40,8 @@ export interface AurralTrack {
     streamPath?: string | null;
     /** Every plausible stream path for this track, in preference order. */
     streamPaths?: string[];
+    /** Deezer/MusicBrainz sample: playable, but not a library track. */
+    isPreview?: boolean;
     previewUrl?: string | null;
     mbid?: string | null;
     [key: string]: unknown;
@@ -232,10 +234,16 @@ export class AurralClient {
     /** Fetch an audio stream as a blob so it can play without a custom header. */
     async fetchAudio(path: string): Promise<Blob> {
         const headers = new Headers();
-        headers.set("Authorization", `Bearer ${this.token}`);
+        const resolved = this.apiPath(path);
+        const url = /^https?:\/\//i.test(resolved) ? resolved : this.asset(resolved);
+        // Deezer preview URLs can be absolute. Sending an Aurral token to a
+        // third-party host would trigger a CORS preflight and leak it, so only
+        // authorize requests to our own server.
+        const external = /^https?:\/\//i.test(resolved) && !resolved.startsWith(this.serverUrl);
+        if (this.token && !external) headers.set("Authorization", `Bearer ${this.token}`);
         let response: Response;
         try {
-            response = await fetch(this.asset(this.apiPath(path)), { headers });
+            response = await fetch(url, { headers });
         } catch {
             throw new AurralError(0, "network", "The audio stream could not be fetched.");
         }
@@ -347,12 +355,57 @@ export class AurralClient {
         return this.request(`/api/discover/playlists?${query}`);
     }
 
+    /** Made-for-you mixes and recommendation playlists. */
+    discoverMixes(): Promise<Record<string, unknown>> {
+        return this.request("/api/discover/playlists/made-for-you");
+    }
+
     recentReleases(): Promise<Array<Record<string, unknown>>> {
         return this.request("/api/library/recent-releases");
     }
 
     trending(): Promise<Record<string, unknown>> {
         return this.request("/api/discover/trending");
+    }
+
+    /** Short Play button previews for a MusicBrainz artist. */
+    artistPreviews(mbid: string, artistName?: string): Promise<Record<string, unknown>> {
+        const query = new URLSearchParams();
+        if (artistName) query.set("artistName", artistName);
+        const suffix = query.toString();
+        return this.request(`/api/artists/${encodeURIComponent(mbid)}/preview${suffix ? `?${suffix}` : ""}`);
+    }
+
+    /** Preview tracks for a release group; cards use its MBID as their id. */
+    releaseGroupTracks(mbid: string, release?: string): Promise<unknown> {
+        const query = new URLSearchParams();
+        if (release) query.set("release", release);
+        const suffix = query.toString();
+        return this.request(`/api/artists/release-group/${encodeURIComponent(mbid)}/tracks${suffix ? `?${suffix}` : ""}`);
+    }
+
+    /**
+     * Resolve the Deezer/Apple ids used by Trending cards to MusicBrainz ids.
+     * The official client does this before opening an external album page.
+     */
+    discoverLinks(params: {
+        artist?: string;
+        album?: string;
+        albumId?: string;
+        track?: string;
+    }): Promise<{ artistMbid?: string | null; albumMbid?: string | null }> {
+        const query = new URLSearchParams();
+        for (const [key, value] of Object.entries(params)) {
+            if (value) query.set(key, value);
+        }
+        return this.request(`/api/discover/playlists/links?${query}`);
+    }
+
+    /** Browse a Deezer/Aurral discovery playlist and get its preview tracks. */
+    discoverPlaylist(provider: string, id: string): Promise<Record<string, unknown>> {
+        return this.request(
+            `/api/discover/playlists/${encodeURIComponent(provider)}/${encodeURIComponent(id)}`,
+        );
     }
 
     playlistStatus(): Promise<Record<string, unknown>> {
@@ -378,8 +431,27 @@ export class AurralClient {
         return this.request("/api/share-links/");
     }
 
-    createPlainShareLink(): Promise<{ link: string }> {
-        return this.request("/api/share-links/plain", { method: "POST" });
+    /** Create a share-manifest link; the server returns a public short URL. */
+    createPlainShareLink(manifest: Record<string, unknown>): Promise<{ link: { url: string } }> {
+        return this.request("/api/share-links/plain", {
+            method: "POST",
+            body: JSON.stringify({ manifest }),
+        });
+    }
+
+    favorites(): Promise<{
+        songIds: string[];
+        artistIds: string[];
+        albumIds: string[];
+    }> {
+        return this.request("/api/library/favorites");
+    }
+
+    setFavorites(ids: string[], starred: boolean): Promise<{ changedIds?: string[] }> {
+        return this.request("/api/library/favorites", {
+            method: "POST",
+            body: JSON.stringify({ ids, starred }),
+        });
     }
 
     people(): Promise<{ sharing: boolean; people: Array<Record<string, unknown>> }> {

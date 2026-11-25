@@ -19,6 +19,7 @@ import {
     refresh,
     setActivityView,
     setView,
+    toggleSidebar,
     ui,
 } from "../aurral/store";
 
@@ -42,11 +43,6 @@ const pageTitle = computed(() => {
         people: "People",
         shares: "Share links",
     }[ui.view];
-});
-
-const pageEyebrow = computed(() => {
-    if (ui.detail) return ui.detail.kind;
-    return "Aurral";
 });
 
 const detailArtwork = computed(() => {
@@ -139,6 +135,11 @@ function restoreQueue(): void {
 }
 
 onMounted(() => {
+    // The shell owns the left-track state. Start our header toggle from it so
+    // the icon does not lie if the user collapsed the sidebar before opening
+    // this pane; after that our CSS drives the visible state.
+    const grid = document.querySelector(".tumult-shell-grid");
+    ui.sidebarOpen = grid?.getAttribute("data-roomlist") !== "closed";
     if (!connected.value) return;
     void refresh();
     restoreQueue();
@@ -153,12 +154,19 @@ watch(session, (value) => {
 <template>
     <ConnectPanel v-if="!connected" />
 
-    <div v-else class="au-app">
+    <div v-else class="au-app" :data-sidebar-open="ui.sidebarOpen ? 'true' : 'false'">
         <div class="au-page">
             <header class="au-page-header">
+                <button
+                    class="au-button au-button--icon au-sidebar-toggle"
+                    type="button"
+                    :aria-label="ui.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'"
+                    :title="ui.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'"
+                    :aria-expanded="ui.sidebarOpen"
+                    @click="toggleSidebar"
+                ><AuIcon name="menu" /></button>
                 <button v-if="ui.detail" class="au-button au-button--icon" type="button" aria-label="Back" @click="closeDetail"><AuIcon name="back" /></button>
                 <div class="au-page-heading">
-                    <div class="au-eyebrow">{{ pageEyebrow }}</div>
                     <h1>{{ pageTitle }}</h1>
                 </div>
                 <div class="au-page-actions">
@@ -261,18 +269,6 @@ watch(session, (value) => {
 
                 <!-- Search -->
                 <template v-else-if="ui.view === 'search'">
-                    <form class="au-search au-search--page" @submit.prevent="refresh">
-                        <input
-                            v-model="ui.query"
-                            class="au-input au-input--search"
-                            type="search"
-                            placeholder="Search artists, albums, tracks…"
-                            aria-label="Search Aurral"
-                            @input="onSearchInput"
-                        />
-                        <button class="au-button au-button--primary" type="submit" :disabled="ui.loading">Search</button>
-                    </form>
-
                     <div class="au-chip-row">
                         <button
                             v-for="scope in searchScopes"
